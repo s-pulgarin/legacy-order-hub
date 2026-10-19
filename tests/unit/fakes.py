@@ -4,12 +4,14 @@ from dataclasses import replace
 
 from orderhub.application.ports.notifier import OrderNotifier
 from orderhub.application.ports.password_hasher import PasswordHasher
+from orderhub.application.ports.token_service import TokenClaims, TokenService
 from orderhub.application.ports.repositories import (
     OrderRepository,
     ProductRepository,
     UserRepository,
 )
 from orderhub.application.ports.unit_of_work import UnitOfWork
+from orderhub.domain.exceptions import InvalidToken
 
 
 class FakeUserRepository(UserRepository):
@@ -90,3 +92,20 @@ class FakePasswordHasher(PasswordHasher):
 
     def is_hash(self, value):
         return value.startswith(self.PREFIX)
+
+
+class FakeTokenService(TokenService):
+    """Token legible "token:<id>:<username>:<role>", solo para pruebas."""
+
+    expires_in_seconds = 1800
+
+    def issue(self, user):
+        return f"token:{user.id}:{user.username}:{user.role}"
+
+    def verify(self, token):
+        try:
+            prefix, user_id, username, role = token.split(":")
+            assert prefix == "token"
+            return TokenClaims(int(user_id), username, role)
+        except (ValueError, AssertionError):
+            raise InvalidToken()

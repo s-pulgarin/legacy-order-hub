@@ -22,7 +22,18 @@ def register():
 
 @bp.route("/login", methods=["POST"])
 def login():
-    """Valida usuario y contraseña. 200 con el usuario; 401 si las credenciales no son válidas."""
+    """Valida usuario y contraseña y devuelve un JWT. 401 si las credenciales no son válidas."""
     data = request.get_json(silent=True) or {}
-    user = _auth_service().login(data.get("username"), data.get("password"))
-    return jsonify({"status": "success", "user": user_to_dict(user)}), 200
+    session = _auth_service().login(data.get("username"), data.get("password"))
+    return (
+        jsonify(
+            {
+                "status": "success",
+                "user": user_to_dict(session.user),
+                "token": session.token,
+                "token_type": "Bearer",
+                "expires_in": session.expires_in,
+            }
+        ),
+        200,
+    )

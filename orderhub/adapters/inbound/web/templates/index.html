@@ -12,6 +12,7 @@
         pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
         button { background: #0275d8; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
         button:hover { background: #025aa5; }
+        input { padding: 8px; margin-right: 8px; border: 1px solid #ccc; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -23,6 +24,14 @@
     </div>
 
     <div class="card">
+        <h3>🔐 Iniciar sesión</h3>
+        <input id="username" placeholder="Usuario" autocomplete="username">
+        <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password">
+        <button onclick="login()">Entrar</button>
+        <p id="session">Sin sesión activa.</p>
+    </div>
+
+    <div class="card">
         <h3>🔍 Probar Consulta de Órdenes Legadas</h3>
         <button onclick="fetchOrders()">Cargar Órdenes desde la API (/get_all_orders_legacy)</button>
         <h4>Respuesta de la API:</h4>
@@ -30,11 +39,35 @@
     </div>
 
     <script>
+        // El token solo vive en memoria: se pierde al recargar la página.
+        let token = null;
+
+        async function login() {
+            const sessionBlock = document.getElementById('session');
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value
+                })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                token = data.token;
+                sessionBlock.textContent = "Sesión activa: " + data.user.username + " (" + data.user.role + ")";
+            } else {
+                token = null;
+                sessionBlock.textContent = data.message;
+            }
+        }
+
         async function fetchOrders() {
             const outputBlock = document.getElementById('output');
             outputBlock.textContent = "Cargando órdenes desde el servidor...";
             try {
-                const response = await fetch('/get_all_orders_legacy');
+                const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+                const response = await fetch('/get_all_orders_legacy', { headers });
                 const data = await response.json();
                 outputBlock.textContent = JSON.stringify(data, null, 2);
             } catch (error) {
