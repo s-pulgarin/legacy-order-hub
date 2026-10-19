@@ -2,7 +2,7 @@
 
 import sqlite3
 from dataclasses import replace
-from typing import Optional
+from typing import List, Optional
 
 from orderhub.application.ports.repositories import ProductRepository
 from orderhub.domain.entities import Product
@@ -32,6 +32,13 @@ class SqliteProductRepository(ProductRepository):
             (product.name, product.price, product.stock),
         )
         return replace(product, id=cursor.lastrowid)
+
+    def list_all(self) -> List[Product]:
+        """Devuelve todos los productos ordenados por id."""
+        rows = self._conn.execute(
+            "SELECT id, name, price, stock FROM products ORDER BY id"
+        ).fetchall()
+        return [Product(**dict(row)) for row in rows]
 
     def update_stock(self, product: Product) -> None:
         """Guarda el stock actual del producto."""

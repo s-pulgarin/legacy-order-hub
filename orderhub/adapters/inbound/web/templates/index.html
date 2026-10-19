@@ -67,6 +67,12 @@
 
     <div class="grid">
         <div class="card">
+            <h3>📋 Catálogo</h3>
+            <p class="hint"><code>GET /products</code> · pública. Muestra el stock actual: úsalo antes y después de crear una orden.</p>
+            <button onclick="listProducts()">Ver productos</button>
+        </div>
+
+        <div class="card">
             <h3>🛒 Crear orden</h3>
             <p class="hint"><code>POST /create_order</code> · requiere sesión. La orden queda a nombre del usuario del token.</p>
             <div class="row">
@@ -108,6 +114,7 @@
         <h3>✅ Resultados esperados</h3>
         <table>
             <tr><th>Acción</th><th>Sin token</th><th>Token manipulado</th><th>client (juan)</th><th>admin</th></tr>
+            <tr><td>Ver productos</td><td>200</td><td>200</td><td>200</td><td>200</td></tr>
             <tr><td>Crear orden</td><td>401</td><td>401</td><td>201</td><td>201</td></tr>
             <tr><td>Crear producto</td><td>401</td><td>401</td><td>403</td><td>201</td></tr>
             <tr><td>Consultar órdenes</td><td>401</td><td>401</td><td>403</td><td>200</td></tr>
@@ -219,6 +226,10 @@
                 price: Number(value('productPrice')),
                 stock: Number(value('productStock'))
             });
+        }
+
+        async function listProducts() {
+            await callApi('GET', '/products', undefined, false);
         }
 
         async function fetchOrders() {

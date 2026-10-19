@@ -19,19 +19,27 @@ class OrderService:
     def create_order(
         self, user_id: Optional[int], product_id: int, quantity: int
     ) -> Order:
-        """Registra la orden y descuenta el stock en una sola transacción; luego
-        notifica.
+        """Descuenta el stock y registra la orden en una sola transacción; luego
+        notifica (RF-02.2, RF-03.3).
+
+        1. Busca el producto (ProductNotFound si no existe).
+        2. `product.decrease_stock(quantity)` ANTES de guardar la orden: si no
+           hay stock lanza InsufficientStockException y no se guarda nada.
+        3. Guarda la orden y el nuevo stock y confirma con `commit()`.
+
+        Cualquier excepción antes del commit hace que la Unit of Work haga
+        rollback, así que el stock y las órdenes quedan como estaban.
         """
         with self._uow_factory() as uow:
             product = uow.products.get(product_id)
             if product is None:
                 raise ProductNotFound()
 
-            order = Order.place(user_id, product, quantity)
             product.decrease_stock(quantity)
+            order = Order.place(user_id, product, quantity)
 
-            order = uow.orders.add(order)
             uow.products.update_stock(product)
+            order = uow.orders.add(order)
             uow.commit()
 
         self._notifier.order_created(order)

@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from orderhub.domain.exceptions import InsufficientStock, InvalidInput
+from orderhub.domain.exceptions import InsufficientStockException, InvalidInput
 
 ROLE_ADMIN = "admin"
 ROLE_CLIENT = "client"
@@ -54,9 +54,16 @@ class Product:
         return self.stock >= quantity
 
     def decrease_stock(self, quantity: int) -> None:
-        """Descuenta `quantity` unidades; lanza InsufficientStock si no alcanzan."""
-        if not self.has_stock(quantity):
-            raise InsufficientStock()
+        """Descuenta `quantity` unidades del stock (RF-02.2, RF-02.3).
+
+        Lanza InvalidInput si `quantity` no es positiva (evita aumentar el stock
+        con cantidades negativas) e InsufficientStockException si
+        `quantity > stock`. En ambos casos el stock no cambia.
+        """
+        if quantity <= 0:
+            raise InvalidInput("La cantidad debe ser mayor que cero")
+        if quantity > self.stock:
+            raise InsufficientStockException()
         self.stock -= quantity
 
 
@@ -73,11 +80,13 @@ class Order:
 
     @classmethod
     def place(cls, user_id: Optional[int], product: Product, quantity: int) -> "Order":
-        """Crea una orden para `product`, valida la cantidad y calcula el total."""
+        """Crea una orden para `product`, valida la cantidad y calcula el total.
+
+        La disponibilidad de stock la valida `Product.decrease_stock`, que
+        OrderService invoca antes de guardar la orden.
+        """
         if quantity <= 0:
             raise InvalidInput("La cantidad debe ser mayor que cero")
-        if not product.has_stock(quantity):
-            raise InsufficientStock()
         return cls(
             id=None,
             user_id=user_id,

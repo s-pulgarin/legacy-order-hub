@@ -285,3 +285,42 @@ def test_role_cannot_be_escalated_by_forging_token(client):
         headers={"Authorization": f"Bearer {forged}"},
     )
     assert response.status_code == 401
+
+
+# --- Catálogo e inventario (RF-02) --------------------------------------------
+
+
+def test_list_products_is_public_and_shows_current_stock(client, client_headers):
+    response = client.get("/products")
+    assert response.status_code == 200
+    assert response.get_json() == [
+        {"id": 1, "name": "Laptop Legada", "price": 1200.0, "stock": 5},
+        {"id": 2, "name": "Mouse USB", "price": 15.5, "stock": 50},
+    ]
+
+    client.post(
+        "/create_order", json={"product_id": 1, "quantity": 2}, headers=client_headers
+    )
+    assert client.get("/products").get_json()[0]["stock"] == 3
+
+
+def test_failure_while_saving_order_rolls_back_stock(
+    client, db_path, client_headers, monkeypatch
+):
+    """Si falla el INSERT de la orden después de descontar stock, se hace rollback."""
+    from orderhub.adapters.outbound.persistence.sqlite import order_repository
+
+    def failing_add(self, order):
+        raise RuntimeError("fallo simulado de la base de datos")
+
+    monkeypatch.setattr(order_repository.SqliteOrderRepository, "add", failing_add)
+
+    response = client.post(
+        "/create_order", json={"product_id": 1, "quantity": 2}, headers=client_headers
+    )
+
+    assert response.status_code == 500
+    assert _stock(db_path, 1) == 5
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+    conn.close()

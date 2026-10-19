@@ -1,6 +1,6 @@
-"""Casos de uso del catálogo de productos (operaciones administrativas, RF-01.4)."""
+"""Casos de uso del catálogo de productos (RF-01.4, RF-02.1)."""
 
-from typing import Callable
+from typing import Callable, List
 
 from orderhub.application.ports.unit_of_work import UnitOfWork
 from orderhub.domain.entities import Product
@@ -24,3 +24,8 @@ class ProductService:
             product = uow.products.add(product)
             uow.commit()
         return product
+
+    def list_products(self) -> List[Product]:
+        """Devuelve el catálogo completo con el stock actual de cada producto."""
+        with self._uow_factory() as uow:
+            return uow.products.list_all()
