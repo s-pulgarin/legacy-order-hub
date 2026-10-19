@@ -33,6 +33,8 @@
 
 **Estado al cierre de esta auditoría:** el PR #1 (arquitectura hexagonal) resuelve o mitiga 9 ítems, marcados como "En PR #1". Los demás siguen abiertos.
 
+**Actualización (segunda entrega, rama `feature/auth-security`):** se resuelven **TD-03** (Argon2) y **TD-06** (JWT + roles), y avanza **TD-10** (67 pruebas). Detalle en [`ARCHITECTURE.md`](ARCHITECTURE.md), secciones 5 y 6.
+
 ---
 
 ## 3. Registro de deuda técnica
@@ -71,7 +73,7 @@
 | **Impacto** | Una fuga de `orderhub.db` expone todas las contraseñas, reutilizables en otros servicios. |
 | **Remediación** | Guardar las contraseñas con hash bcrypt o argon2, migrar las existentes y sacar la semilla del código. |
 | **Requisito** | RF-01.2, HU-02 (CA-2) |
-| **Esfuerzo / Estado** | M · **Abierto** (el PR #1 aísla la comparación en `AuthService._password_matches` para poder cambiarla sin tocar nada más) |
+| **Esfuerzo / Estado** | M · ✅ **Resuelto (segunda entrega)**: puerto `PasswordHasher` + `Argon2PasswordHasher` (Argon2id). La semilla se guarda con hash y las contraseñas legadas en texto plano se migran al arrancar (`schema._migrate_plaintext_passwords`). Las contraseñas semilla siguen escritas en el código hasta RNF-02.1. |
 
 ### 🔴 TD-04 · Depurador de Werkzeug expuesto a la red
 | Campo | Detalle |
@@ -106,7 +108,7 @@
 | **Impacto** | Exposición de datos de clientes y órdenes fraudulentas a nombre de otros. |
 | **Remediación** | JWT con expiración, el `user_id` tomado del token y no del cuerpo, y roles para las operaciones administrativas. |
 | **Requisito** | RF-01.3, RF-01.4 |
-| **Esfuerzo / Estado** | M · **Abierto** |
+| **Esfuerzo / Estado** | M · ✅ **Resuelto (segunda entrega)**: `JWTTokenService` (HS256, expiración de 30 min). `@token_required` en `/create_order`, que toma el `user_id` del token. `@admin_required` en `/get_all_orders_legacy` y en `POST /products` (403 para otros roles). |
 
 ### 🟠 TD-07 · Cantidad no validada: stock manipulable
 | Campo | Detalle |
@@ -151,7 +153,7 @@
 | **Impacto** | Cada cambio corre un riesgo alto de regresión. |
 | **Remediación** | pytest con pruebas unitarias (con mocks o fakes) y de integración; cobertura ≥ 80 %. |
 | **Requisito** | RNF-01.2, HU-04 |
-| **Esfuerzo / Estado** | M · **Parcial en PR #1** (22 pruebas; falta medir cobertura con `pytest-cov`) |
+| **Esfuerzo / Estado** | M · **Parcial**: 22 pruebas en el PR #1 y 67 en la segunda entrega; falta medir cobertura con `pytest-cov` |
 
 ### 🟠 TD-11 · Dependencias con vulnerabilidades conocidas
 | Campo | Detalle |
@@ -276,3 +278,4 @@ Conclusión: el SAST y el SCA deben correr en CI (HU-05), pero no reemplazan la 
 | Fecha | Cambio |
 | :--- | :--- |
 | 2026-10-19 | Auditoría inicial (HU-01): Bandit, pip-audit, revisión con IA y verificación dinámica. 20 ítems registrados. |
+| 2026-10-19 | Segunda entrega: TD-03 y TD-06 resueltos; TD-10 actualizado. |

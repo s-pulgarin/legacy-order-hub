@@ -1,0 +1,10 @@
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+# database.py es el módulo legado que se conserva solo como referencia.
+extend-exclude = '''
+^/database\.py
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

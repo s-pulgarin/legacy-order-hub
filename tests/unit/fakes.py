@@ -1,25 +1,39 @@
-"""Adaptadores falsos en memoria: permiten probar los servicios sin Flask ni base de datos."""
+"""Adaptadores falsos en memoria: permiten probar los servicios sin Flask ni base de
+datos.
+"""
 
 from dataclasses import replace
 
 from orderhub.application.ports.notifier import OrderNotifier
+from orderhub.application.ports.password_hasher import PasswordHasher
+from orderhub.application.ports.token_service import TokenClaims, TokenService
 from orderhub.application.ports.repositories import (
     OrderRepository,
     ProductRepository,
     UserRepository,
 )
 from orderhub.application.ports.unit_of_work import UnitOfWork
+from orderhub.domain.exceptions import InvalidToken
 
 
 class FakeUserRepository(UserRepository):
+    """Usuarios en un diccionario indexado por nombre."""
+
     def __init__(self, users):
         self._users = {u.username: u for u in users}
 
     def get_by_username(self, username):
         return self._users.get(username)
 
+    def add(self, user):
+        user = replace(user, id=len(self._users) + 1)
+        self._users[user.username] = user
+        return user
+
 
 class FakeProductRepository(ProductRepository):
+    """Productos en un diccionario; devuelve copias para simular la BD."""
+
     def __init__(self, products):
         self._products = {p.id: p for p in products}
 
@@ -27,11 +41,18 @@ class FakeProductRepository(ProductRepository):
         product = self._products.get(product_id)
         return replace(product) if product else None
 
+    def add(self, product):
+        product = replace(product, id=len(self._products) + 1)
+        self._products[product.id] = product
+        return product
+
     def update_stock(self, product):
         self._products[product.id] = replace(product)
 
 
 class FakeOrderRepository(OrderRepository):
+    """Órdenes en una lista con ids secuenciales."""
+
     def __init__(self):
         self._orders = []
 
@@ -45,6 +66,8 @@ class FakeOrderRepository(OrderRepository):
 
 
 class FakeUnitOfWork(UnitOfWork):
+    """Unit of Work en memoria que registra si se llamó a commit()."""
+
     def __init__(self, users=(), products=()):
         self.users = FakeUserRepository(users)
         self.products = FakeProductRepository(products)
@@ -59,8 +82,42 @@ class FakeUnitOfWork(UnitOfWork):
 
 
 class FakeNotifier(OrderNotifier):
+    """Guarda las órdenes notificadas para poder comprobarlas."""
+
     def __init__(self):
         self.notified = []
 
     def order_created(self, order):
         self.notified.append(order)
+
+
+class FakePasswordHasher(PasswordHasher):
+    """Hash reversible y legible, solo para pruebas: "hashed:<contraseña>"."""
+
+    PREFIX = "hashed:"
+
+    def hash(self, plain_password):
+        return self.PREFIX + plain_password
+
+    def verify(self, plain_password, password_hash):
+        return password_hash == self.PREFIX + plain_password
+
+    def is_hash(self, value):
+        return value.startswith(self.PREFIX)
+
+
+class FakeTokenService(TokenService):
+    """Token legible "token:<id>:<username>:<role>", solo para pruebas."""
+
+    expires_in_seconds = 1800
+
+    def issue(self, user):
+        return f"token:{user.id}:{user.username}:{user.role}"
+
+    def verify(self, token):
+        try:
+            prefix, user_id, username, role = token.split(":")
+            assert prefix == "token"
+            return TokenClaims(int(user_id), username, role)
+        except (ValueError, AssertionError):
+            raise InvalidToken()

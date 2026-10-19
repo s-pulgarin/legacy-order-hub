@@ -1,131 +1,278 @@
 # Arquitectura de OrderHub: Hexagonal (Puertos y Adaptadores)
 
-> **Requisitos cubiertos:** RNF-01.1 (Arquitectura Limpia/Hexagonal, Repository Pattern, Dependency Injection), RF-01.1 (inicio de sesión), HU-03 (desacoplamiento de `/create_order`).
-> **Estado:** primer avance de la Unidad I. La persistencia sigue siendo SQLite (`orderhub.db`).
+> **Requisitos cubiertos:**
+> - **Primera entrega:** RNF-01.1 (arquitectura hexagonal, Repository Pattern, Dependency Injection), RF-01.1 (inicio de sesión), HU-03.
+> - **Segunda entrega:** RF-01.2 (hashing Argon2), RF-01.3 (sesión JWT), RF-01.4 (control de acceso por rol), RNF-01.2 (pruebas de login), RNF-01.3 (PEP 8 con `flake8` y `black`).
+>
+> **Estado:** la persistencia sigue siendo SQLite (`orderhub.db`). Los secretos todavía se leen de `config.py`; pasar a `.env` es RNF-02.1, fuera de este alcance.
 
-## 1. Problema del sistema legado
+## 1. Resumen del sistema
 
-En la v1.0 todo vivía en `app.py`. Cada handler de Flask mezclaba cuatro responsabilidades: HTTP, reglas de negocio, SQL y notificaciones (`print`). En concreto:
-- `/login` armaba el SQL concatenando texto (inyección SQL) y devolvía la contraseña en la respuesta.
-- `/create_order` validaba stock, calculaba el total, insertaba, descontaba stock y "notificaba" en el mismo bloque, sin rollback.
-- No se podía probar ninguna regla de negocio sin levantar Flask y una base de datos.
+OrderHub es una API Flask que gestiona usuarios, catálogo de productos y órdenes de compra. Está organizada en tres anillos:
+
+| Anillo | Contenido | Depende de |
+| :--- | :--- | :--- |
+| **Dominio** (`domain/`) | Entidades `User`, `Product`, `Order` y excepciones de negocio | Nada |
+| **Aplicación** (`application/`) | Casos de uso (`AuthService`, `OrderService`, `ProductService`) y **puertos** | Dominio |
+| **Adaptadores** (`adapters/`) | Flask (entrada); SQLite, Argon2, JWT y notificador (salida) | Aplicación y dominio |
+
+### Componentes de seguridad
+
+| Componente | Tipo | Responsabilidad | Requisito |
+| :--- | :--- | :--- | :--- |
+| `PasswordHasher` | Puerto | Contrato para calcular y verificar hashes de contraseñas | RF-01.2 |
+| `Argon2PasswordHasher` | Adaptador de salida | Argon2id con sal aleatoria (`argon2-cffi`) | RF-01.2 |
+| `TokenService` / `TokenClaims` | Puerto | Contrato para emitir y validar tokens; identidad extraída del token | RF-01.3 |
+| `JWTTokenService` | Adaptador de salida | JWT HS256 con `sub`, `username`, `role`, `iat` y `exp` (30 min por defecto) | RF-01.3 |
+| `AuthService` | Caso de uso | `register`, `login` (emite el token) y `verify_token` | RF-01.1 a RF-01.3 |
+| `@token_required` | Decorador web | Exige `Authorization: Bearer <token>` válido → si no, 401 | RF-01.3 |
+| `@admin_required` | Decorador web | Exige token válido con rol `admin` → 401 sin token, 403 con otro rol | RF-01.4 |
+| `error_handlers.py` | Adaptador web | Traduce `InvalidCredentials`/`InvalidToken` a 401, `AccessDenied` a 403 y `UserAlreadyExists` a 409 | — |
+| `schema.init_db` | Adaptador de salida | Guarda las contraseñas semilla con hash y migra las contraseñas legadas en texto plano | RF-01.2 |
+
+### Endpoints
+
+| Método y ruta | Protección | Descripción |
+| :--- | :--- | :--- |
+| `GET /` | Pública | Panel HTML para probar todos los endpoints (ver sección 10) |
+| `POST /register` | Pública | Crea un usuario con rol `client` |
+| `POST /login` | Pública | Devuelve el usuario (sin contraseña) y un JWT |
+| `POST /create_order` | `@token_required` | Crea una orden a nombre del usuario del token |
+| `GET /get_all_orders_legacy` | `@admin_required` | Lista las órdenes de todos los usuarios |
+| `POST /products` | `@admin_required` | Crea un producto (operación administrativa) |
 
 ## 2. Regla de dependencias
 
 ```mermaid
 flowchart LR
-    subgraph Adaptadores de entrada
-        WEB[Flask<br/>auth_routes / order_routes]
+    subgraph IN[Adaptadores de entrada]
+        WEB[Flask<br/>blueprints + @token_required / @admin_required]
     end
-    subgraph Núcleo
-        APP[application<br/>AuthService / OrderService<br/>+ puertos]
+    subgraph CORE[Núcleo]
+        APP[application<br/>AuthService / OrderService / ProductService<br/>+ puertos]
         DOM[domain<br/>User, Product, Order<br/>excepciones]
     end
-    subgraph Adaptadores de salida
+    subgraph OUT[Adaptadores de salida]
         SQL[SQLite<br/>repositorios + UnitOfWork]
+        SEC[Seguridad<br/>Argon2PasswordHasher<br/>JWTTokenService]
         NOT[ConsoleOrderNotifier]
     end
 
     WEB --> APP
     APP --> DOM
     SQL -. implementa puertos .-> APP
+    SEC -. implementa puertos .-> APP
     NOT -. implementa puertos .-> APP
     C[container.py<br/>composition root] --> WEB
     C --> SQL
+    C --> SEC
     C --> NOT
 ```
 
-Las dependencias apuntan **siempre hacia el núcleo**. `domain/` y `application/` no importan `flask` ni `sqlite3`. Solo conocen los **puertos** (clases abstractas), y los adaptadores son quienes los implementan.
+Las dependencias apuntan **siempre hacia el núcleo**. `domain/` y `application/` no importan `flask`, `sqlite3`, `argon2` ni `jwt`: solo conocen los puertos. Por ejemplo, cambiar Argon2 por bcrypt solo requiere otro adaptador de `PasswordHasher` y una línea en `container.py`.
 
 ## 3. Estructura de directorios
 
 ```
 orderhub/
-├── __init__.py              # create_app(): fábrica de Flask
-├── container.py             # Composition root (Dependency Injection manual)
+├── __init__.py                  # create_app(): fábrica de Flask
+├── container.py                 # Composition root (Dependency Injection manual)
 ├── domain/
-│   ├── entities.py          # User, Product, Order (+ reglas: stock, total, cantidad > 0)
-│   └── exceptions.py        # InvalidCredentials, ProductNotFound, InsufficientStock, InvalidInput
+│   ├── entities.py              # User (role, is_admin), Product (create), Order (place)
+│   └── exceptions.py            # InvalidCredentials, InvalidToken, AccessDenied, UserAlreadyExists, ...
 ├── application/
 │   ├── ports/
-│   │   ├── repositories.py  # UserRepository, ProductRepository, OrderRepository
-│   │   ├── unit_of_work.py  # UnitOfWork (transacción atómica)
-│   │   └── notifier.py      # OrderNotifier
+│   │   ├── repositories.py      # UserRepository, ProductRepository, OrderRepository
+│   │   ├── unit_of_work.py      # UnitOfWork (transacción atómica)
+│   │   ├── notifier.py          # OrderNotifier
+│   │   ├── password_hasher.py   # PasswordHasher          (RF-01.2)
+│   │   └── token_service.py     # TokenService, TokenClaims (RF-01.3)
 │   └── services/
-│       ├── auth_service.py  # Caso de uso: login (RF-01.1)
-│       └── order_service.py # Casos de uso: crear y listar órdenes
+│       ├── auth_service.py      # register, login, verify_token
+│       ├── order_service.py     # create_order, list_orders
+│       └── product_service.py   # create_product           (RF-01.4)
 └── adapters/
-    ├── inbound/web/         # Flask: blueprints, serializadores, manejo de errores, templates
+    ├── inbound/web/
+    │   ├── auth_decorators.py   # @token_required, @admin_required
+    │   ├── auth_routes.py       # POST /register, POST /login
+    │   ├── order_routes.py      # POST /create_order, GET /get_all_orders_legacy
+    │   ├── product_routes.py    # POST /products
+    │   ├── error_handlers.py    # excepciones de dominio → 400/401/403/404/409
+    │   ├── serializers.py       # entidades → JSON (sin contraseña)
+    │   └── templates/index.html # panel de pruebas de la API
     └── outbound/
-        ├── persistence/sqlite/  # Repositorios SQLite (consultas parametrizadas), esquema y UoW
+        ├── persistence/sqlite/  # repositorios, UnitOfWork, esquema y migración de contraseñas
+        ├── security/
+        │   ├── argon2_hasher.py      # Argon2PasswordHasher
+        │   └── jwt_token_service.py  # JWTTokenService
         └── notifications/       # ConsoleOrderNotifier
 tests/
-├── unit/                    # Servicios probados con adaptadores falsos en memoria
-└── integration/             # API completa con SQLite temporal
+├── unit/                        # servicios con fakes en memoria + adaptadores Argon2/JWT reales
+└── integration/                 # API completa con SQLite temporal
 ```
 
-Equivalencia con HU-03: `repositories/order_repository.py` → `adapters/outbound/persistence/sqlite/order_repository.py`; `services/order_service.py` → `application/services/order_service.py`.
+`database.py` (legado) se conserva solo como referencia. Ya nada lo importa y está excluido de los linters.
 
-`database.py` (legado) se conserva solo como referencia. Ya nada lo importa: su lógica vive en `adapters/outbound/persistence/sqlite/connection.py` y `schema.py`.
-
-## 4. Patrones aplicados
+## 4. Patrones de diseño aplicados
 
 | Patrón | Dónde | Para qué |
 | :--- | :--- | :--- |
-| **Puertos y Adaptadores** | `application/ports` ↔ `adapters/` | Cambiar Flask, SQLite o el notificador sin tocar el negocio. |
-| **Repository** | `UserRepository`, `ProductRepository`, `OrderRepository` | Ocultar el SQL detrás de operaciones de dominio (`get_by_username`, `add`, ...). |
-| **Unit of Work** | `UnitOfWork` / `SqliteUnitOfWork` | Crear la orden y descontar el stock en una sola transacción (RF-03.3). |
-| **Dependency Injection** | `container.py`, constructores de los servicios | Los servicios reciben sus dependencias; los tests inyectan versiones falsas. |
+| **Puertos y Adaptadores (Hexagonal)** | `application/ports` ↔ `adapters/` | Cambiar Flask, SQLite, Argon2 o JWT sin tocar el negocio. |
+| **Adapter** | `Argon2PasswordHasher`, `JWTTokenService`, `Sqlite*Repository`, `ConsoleOrderNotifier` | Cada uno adapta una librería o tecnología externa (`argon2-cffi`, `PyJWT`, `sqlite3`, `logging`) a la interfaz que espera el núcleo. Por ejemplo, `Argon2PasswordHasher.verify` convierte las excepciones de argon2 en un `bool`. |
+| **Decorator** | `@token_required`, `@admin_required` (`auth_decorators.py`) | Agregan autenticación y autorización a una vista sin modificarla. `@admin_required` se construye sobre `@token_required`. |
+| **Dependency Injection** | `container.py`; constructores de `AuthService(uow_factory, password_hasher, token_service)`, `OrderService` y `ProductService` | Los servicios reciben sus dependencias. Los tests inyectan `FakePasswordHasher` y `FakeTokenService`; `build_container` acepta hasher y token service alternativos. |
+| **Unit of Work** | `UnitOfWork` / `SqliteUnitOfWork` | Una conexión y una transacción por caso de uso: `register`, `create_order` y `create_product` confirman con `commit()` o se deshacen solos. |
+| **Repository** | `UserRepository` (`get_by_username`, `add`), `ProductRepository` (`get`, `add`, `update_stock`), `OrderRepository` | Ocultan el SQL parametrizado detrás de operaciones de dominio. |
 | **Application Factory** | `create_app()` | Crear la app con distintas configuraciones (producción y tests). |
+| **Factory Method** | `Product.create`, `Order.place` | Construir entidades válidas aplicando las reglas de negocio. |
 
-## 5. Flujo de una petición: `POST /create_order`
+## 5. Flujo de autenticación y autorización
+
+### 5.1 Inicio de sesión (RF-01.1, RF-01.2, RF-01.3)
 
 ```mermaid
 sequenceDiagram
     participant C as Cliente
-    participant R as order_routes (Flask)
-    participant S as OrderService
-    participant U as SqliteUnitOfWork
-    participant N as OrderNotifier
+    participant R as auth_routes /login
+    participant A as AuthService
+    participant U as UnitOfWork / UserRepository
+    participant H as Argon2PasswordHasher
+    participant T as JWTTokenService
 
-    C->>R: JSON {user_id, product_id, quantity}
-    R->>R: valida quantity (entero) → 400 si no
-    R->>S: create_order(user_id, product_id, quantity)
-    S->>U: with uow (abre conexión)
-    S->>U: products.get(product_id)
-    S->>S: Order.place() + product.decrease_stock()
-    S->>U: orders.add(order), products.update_stock(product)
-    S->>U: commit()  (rollback automático si hay error)
-    S->>N: order_created(order)
-    S-->>R: Order
-    R-->>C: 201 {message, order_id, total}
+    C->>R: POST /login {username, password}
+    R->>A: login(username, password)
+    A->>U: users.get_by_username(username)  (SQL parametrizado)
+    U-->>A: User (password = hash Argon2) o None
+    alt usuario inexistente
+        A-->>R: InvalidCredentials
+        R-->>C: 401 {"status":"error","message":"Credenciales inválidas"}
+    else la contraseña no coincide con el hash
+        A->>H: verify(password, hash) → False
+        A-->>R: InvalidCredentials
+        R-->>C: 401 (mismo mensaje: no revela si el usuario existe)
+    else credenciales válidas
+        A->>H: verify(password, hash) → True
+        A->>T: issue(user)
+        T-->>A: JWT firmado (sub, username, role, iat, exp)
+        A-->>R: AuthSession(user, token, expires_in)
+        R-->>C: 200 {user sin password, token, token_type: Bearer, expires_in: 1800}
+    end
 ```
 
-Las excepciones de dominio se traducen a HTTP en `adapters/inbound/web/error_handlers.py` (401/404/400). Los errores no controlados devuelven 500 sin exponer el detalle interno.
+### 5.2 Petición a una ruta protegida (RF-01.3, RF-01.4)
 
-## 6. Cambios de comportamiento respecto al legado
+```mermaid
+flowchart TD
+    REQ[Petición HTTP] --> HDR{"¿Cabecera Authorization: Bearer token?"}
+    HDR -- No --> E401a["401 Se requiere un token de sesión"]
+    HDR -- Sí --> VER["@token_required<br/>AuthService.verify_token → JWTTokenService.verify"]
+    VER -- "firma inválida, manipulado o alg=none" --> E401b["401 Token inválido"]
+    VER -- "exp vencido" --> E401c["401 El token ha expirado"]
+    VER -- válido --> G["g.current_user = TokenClaims(user_id, username, role)"]
+    G --> ADM{"¿La ruta usa @admin_required?"}
+    ADM -- No --> VIEW["Vista: p. ej. /create_order<br/>usa g.current_user.user_id"]
+    ADM -- Sí --> ROLE{"¿role == admin?"}
+    ROLE -- No --> E403["403 Acceso denegado: se requiere rol admin"]
+    ROLE -- Sí --> VIEWA["Vista admin: POST /products,<br/>GET /get_all_orders_legacy"]
+```
 
-| Endpoint | Antes | Ahora |
+### 5.3 Registro (RF-01.2)
+
+`POST /register` → `AuthService.register` valida los datos (usuario obligatorio, contraseña de al menos 8 caracteres) → comprueba que el nombre no exista (si existe, 409) → `PasswordHasher.hash` → `UserRepository.add` con rol `client` → `commit()` → 201. El rol nunca se toma de la petición, así que nadie puede registrarse como `admin`.
+
+## 6. Referencia de funciones nuevas o modificadas (segunda entrega)
+
+### Dominio
+| Función / clase | Descripción |
+| :--- | :--- |
+| `User.is_admin` | `True` si `role == "admin"`. Constantes `ROLE_ADMIN` y `ROLE_CLIENT`. |
+| `Product.create(name, price, stock)` | Crea un producto válido. Lanza `InvalidInput` si el nombre está vacío, el precio no es positivo o finito, o el stock es negativo. |
+| `InvalidToken`, `AccessDenied`, `UserAlreadyExists` | Nuevas excepciones de dominio (se traducen a 401, 403 y 409). |
+
+### Puertos
+| Función / clase | Descripción |
+| :--- | :--- |
+| `PasswordHasher.hash(plain)` | Devuelve el hash a guardar. |
+| `PasswordHasher.verify(plain, hash)` | `bool`; nunca lanza por un hash inválido. |
+| `PasswordHasher.is_hash(value)` | Reconoce si un valor ya es un hash (para migrar contraseñas legadas). |
+| `TokenService.issue(user)` | Token firmado que expira tras `expires_in_seconds`. |
+| `TokenService.verify(token)` | Devuelve `TokenClaims` o lanza `InvalidToken`. |
+| `TokenClaims(user_id, username, role)` / `.is_admin` | Identidad del portador del token (inmutable). |
+| `UserRepository.add(user)`, `ProductRepository.add(product)` | Persisten una entidad nueva y la devuelven con su `id`. |
+
+### Casos de uso
+| Función / clase | Descripción |
+| :--- | :--- |
+| `AuthService(uow_factory, password_hasher, token_service)` | Recibe los tres puertos por inyección. |
+| `AuthService.register(username, password)` | Crea un usuario `client` guardando solo el hash. Errores: `InvalidInput`, `UserAlreadyExists`. |
+| `AuthService.login(username, password)` | Verifica con `PasswordHasher` y devuelve `AuthSession(user, token, expires_in)`. Error: `InvalidCredentials`. |
+| `AuthService.verify_token(token)` | `TokenClaims` del token; `InvalidToken` si falta o no es válido. |
+| `ProductService.create_product(name, price, stock)` | Valida con `Product.create` y persiste en una Unit of Work. |
+
+### Adaptadores
+| Función / clase | Descripción |
+| :--- | :--- |
+| `Argon2PasswordHasher(argon2=None)` | Argon2id con los parámetros por defecto de argon2-cffi (m=64 MiB, t=3, p=4). `verify` captura `VerificationError` e `InvalidHashError`. |
+| `JWTTokenService(secret_key, expires_minutes=30, clock=_utcnow)` | Firma HS256. `verify` exige `exp`, `iat` y `sub`, y acepta solo HS256 (rechaza `alg=none`). `clock` es inyectable para probar la expiración. |
+| `token_required(view)` | Lee `Authorization: Bearer`, valida el token y guarda `g.current_user`. |
+| `admin_required(view)` | `token_required` + verificación de rol → `AccessDenied` (403). |
+| `auth_routes.register()` / `login()` | `POST /register` (201) y `POST /login` (200 con `token`, `token_type`, `expires_in`). |
+| `product_routes.create_product()` | `POST /products` (solo admin). |
+| `serializers.product_to_dict()` | Serializa un producto. |
+| `schema.init_db(db_path, password_hasher)` / `_migrate_plaintext_passwords` | Guarda la semilla con hash y re-hashea las contraseñas legadas en texto plano al arrancar. |
+| `build_container(db_path, secret_key, token_expires_minutes=30, password_hasher=None, token_service=None)` | Arma Argon2 + JWT por defecto y permite sustituirlos. |
+
+## 7. Cambios de comportamiento de la API
+
+| Endpoint | Antes (primera entrega) | Ahora |
 | :--- | :--- | :--- |
-| `POST /login` | Inyección SQL posible (`' OR '1'='1`); devolvía `password` | Consulta parametrizada → 401; la respuesta no incluye `password` |
-| `POST /login` (error interno) | 500 con el texto de la excepción | 500 genérico; el detalle va al log |
-| `POST /create_order` | Aceptaba `quantity` ≤ 0 (aumentaba el stock); `quantity` no numérico → 500 | 400 en ambos casos |
-| Notificación | `print()` | `logging` a través del puerto `OrderNotifier` |
+| `POST /login` | `{status, user}` | `{status, user, token, token_type, expires_in}` |
+| `POST /register` | No existía | 201 / 400 / 409 |
+| `POST /create_order` | Pública; `user_id` tomado del cuerpo | Requiere token (401 sin él); el `user_id` sale del token y el del cuerpo se ignora |
+| `GET /get_all_orders_legacy` | Pública | Solo admin (401 / 403) |
+| `POST /products` | No existía | Solo admin: 201 / 400 / 401 / 403 |
+| Contraseñas en BD | Texto plano | Hash Argon2id; las existentes se migran al arrancar |
+| Panel `/` | Botón de órdenes sin autenticación | Panel de pruebas: registro, login/logout, crear orden, crear producto y consultar órdenes; el token se guarda solo en memoria |
 
-Las rutas, los cuerpos de respuesta y los códigos de éxito no cambian.
+Los cambios respecto al legado de la primera entrega siguen vigentes: inyección SQL eliminada, sin contraseña en las respuestas, cantidades inválidas → 400 y transacción atómica en `create_order`.
 
-## 7. Próximos pasos que esta estructura facilita
+## 8. Calidad: pruebas y linters
 
-- **RF-01.2 (bcrypt):** agregar un puerto `PasswordHasher` y usarlo en `AuthService._password_matches`.
-- **RF-01.3 (JWT):** agregar un puerto `TokenIssuer` y emitir el token en `auth_routes`.
-- **RNF-02.1 (.env):** leer `DB_PATH` y `SECRET_KEY` del entorno en `app.py`.
+- **Pruebas** (`python -m pytest`): 67 pruebas.
+  - `tests/unit/test_auth_service.py`: login exitoso (devuelve usuario y token) y login fallido (contraseña incorrecta, usuario inexistente, inyección SQL, campos vacíos, enviar el hash como contraseña), además de registro y validación de token.
+  - `test_argon2_hasher.py` y `test_jwt_token_service.py`: prueban los adaptadores con las librerías reales (sal aleatoria, token expirado, firma ajena, token manipulado, `alg=none`).
+  - `tests/integration/test_api.py`: 401, 403 y 409 de extremo a extremo y migración de contraseñas legadas.
+- **PEP 8:** `black --check .` sin cambios y `flake8` con 0 avisos. La configuración está en `pyproject.toml` (black, 88 columnas) y `.flake8` (88 columnas; ignora E203/W503 por compatibilidad con black).
+
+## 9. Próximos pasos que esta estructura facilita
+
+- **RNF-02.1 (.env):** leer `SECRET_KEY`, la ruta de la BD y `token_expires_minutes` del entorno en `app.py`, y rotar la clave expuesta en `config.py`.
 - **PostgreSQL/SQLAlchemy:** agregar `adapters/outbound/persistence/postgres/` y cambiar una línea en `container.py`.
 - **RF-04.1 (notificación asíncrona):** otro adaptador de `OrderNotifier` (cola o correo).
+- **Revocación de tokens / refresh tokens:** se agregan detrás del puerto `TokenService` sin tocar los decoradores.
 
-## 8. Cómo ejecutar
+## 10. Cómo ejecutar
 
 ```bash
 pip install -r requirements.txt
-python app.py          # http://localhost:5000
-python -m pytest -q    # pruebas unitarias y de integración
+python app.py              # http://localhost:5000
+python -m pytest -q        # pruebas unitarias y de integración
+black --check . && flake8  # estilo PEP 8
+```
+
+### Panel de pruebas (`http://localhost:5000`)
+
+El panel permite probar todos los endpoints sin herramientas externas:
+
+- **Sesión:** registrarse, entrar (`admin / admin123` o `juan / 123456`) y cerrar sesión. Muestra el usuario y el rol activos.
+- **Selector "Al llamar a la API enviar":** el token de la sesión, sin token o un token con la firma alterada, para comprobar los 401.
+- **Crear orden, crear producto y consultar órdenes.**
+- **Respuesta de la API:** método, ruta, código HTTP coloreado (verde 2xx, amarillo 400/404/409, rojo 401/403) y el JSON devuelto.
+- **Tabla de resultados esperados** por rol, para comparar durante la demostración.
+
+Ejemplo de uso con token desde la terminal:
+
+```bash
+curl -s -X POST localhost:5000/login -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}'
+curl -s -X POST localhost:5000/products -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"name":"Teclado","price":45,"stock":10}'
 ```
