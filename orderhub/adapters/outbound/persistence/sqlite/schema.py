@@ -1,14 +1,24 @@
 """Creación de tablas, datos semilla y migración de contraseñas legadas."""
 
+from typing import Iterable, Tuple
+
 from orderhub.adapters.outbound.persistence.sqlite.connection import get_connection
 from orderhub.application.ports.password_hasher import PasswordHasher
 
+SeedUser = Tuple[str, str, str]  # (username, contraseña en claro, rol)
 
-def init_db(db_path: str, password_hasher: PasswordHasher) -> None:
+
+def init_db(
+    db_path: str,
+    password_hasher: PasswordHasher,
+    seed_users: Iterable[SeedUser] = (),
+) -> None:
     """Crea el esquema, carga los datos semilla y hashea contraseñas en texto plano.
 
-    Las contraseñas semilla se guardan ya hasheadas. Si la base viene del sistema
-    legado (contraseñas en claro), se migran a hash en el arranque.
+    `seed_users` llega desde la configuración (variables SEED_*_PASSWORD del
+    entorno), así que ninguna contraseña está escrita en el código. Los usuarios
+    se crean, con su contraseña hasheada, solo si la tabla `users` está vacía.
+    Si la base viene del sistema legado (contraseñas en claro), se migran a hash.
     """
     conn = get_connection(db_path)
     cursor = conn.cursor()
@@ -47,10 +57,13 @@ def init_db(db_path: str, password_hasher: PasswordHasher) -> None:
         cursor.executemany(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
             [
-                ("admin", password_hasher.hash("admin123"), "admin"),
-                ("juan", password_hasher.hash("123456"), "client"),
+                (username, password_hasher.hash(password), role)
+                for username, password, role in seed_users
             ],
         )
+
+    cursor.execute("SELECT COUNT(*) FROM products")
+    if cursor.fetchone()[0] == 0:
         cursor.executemany(
             "INSERT INTO products (name, price, stock) VALUES (?, ?, ?)",
             [("Laptop Legada", 1200.00, 5), ("Mouse USB", 15.50, 50)],

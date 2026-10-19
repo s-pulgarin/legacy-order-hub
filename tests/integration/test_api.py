@@ -8,6 +8,7 @@ from orderhub import create_app
 from orderhub.container import build_container
 
 SECRET = "clave-de-pruebas-de-al-menos-32-bytes!!"
+SEED_USERS = [("admin", "admin123", "admin"), ("juan", "123456", "client")]
 
 
 @pytest.fixture
@@ -17,7 +18,10 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def client(db_path):
-    app = create_app(container=build_container(db_path, SECRET), secret_key=SECRET)
+    app = create_app(
+        container=build_container(db_path, SECRET, seed_users=SEED_USERS),
+        secret_key=SECRET,
+    )
     app.config["TESTING"] = True
     return app.test_client()
 
@@ -102,7 +106,10 @@ def test_legacy_plaintext_passwords_are_migrated(db_path):
     conn.commit()
     conn.close()
 
-    app = create_app(container=build_container(db_path, SECRET), secret_key=SECRET)
+    app = create_app(
+        container=build_container(db_path, SECRET, seed_users=SEED_USERS),
+        secret_key=SECRET,
+    )
     response = app.test_client().post(
         "/login", json={"username": "admin", "password": "admin123"}
     )

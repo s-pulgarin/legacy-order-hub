@@ -3,11 +3,12 @@
 """
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from orderhub.adapters.outbound.notifications.console_notifier import (
     ConsoleOrderNotifier,
 )
-from orderhub.adapters.outbound.persistence.sqlite.schema import init_db
+from orderhub.adapters.outbound.persistence.sqlite.schema import SeedUser, init_db
 from orderhub.adapters.outbound.persistence.sqlite.unit_of_work import (
     SqliteUnitOfWork,
 )
@@ -37,15 +38,17 @@ def build_container(
     token_expires_minutes: int = DEFAULT_TOKEN_EXPIRES_MINUTES,
     password_hasher: PasswordHasher = None,
     token_service: TokenService = None,
+    seed_users: Iterable[SeedUser] = (),
 ) -> Container:
     """Arma el grafo de dependencias: adaptadores concretos → servicios de aplicación.
 
     `password_hasher` y `token_service` se pueden sustituir (p. ej. en pruebas);
-    por defecto se usan Argon2 y JWT.
+    por defecto se usan Argon2 y JWT. `secret_key` y `seed_users` vienen de la
+    configuración del entorno (RNF-02.1), nunca del código.
     """
     password_hasher = password_hasher or Argon2PasswordHasher()
     token_service = token_service or JWTTokenService(secret_key, token_expires_minutes)
-    init_db(db_path, password_hasher)
+    init_db(db_path, password_hasher, seed_users)
 
     def uow_factory():
         """Crea una Unit of Work nueva por caso de uso (una conexión por petición)."""
