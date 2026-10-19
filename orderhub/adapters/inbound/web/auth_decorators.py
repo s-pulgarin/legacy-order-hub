@@ -29,6 +29,7 @@ def token_required(view):
 
     @wraps(view)
     def wrapper(*args, **kwargs):
+        """Valida el token antes de ejecutar la vista."""
         auth_service = current_app.extensions["orderhub"].auth_service
         g.current_user = auth_service.verify_token(_bearer_token())
         return view(*args, **kwargs)
@@ -46,6 +47,7 @@ def admin_required(view):
     @wraps(view)
     @token_required
     def wrapper(*args, **kwargs):
+        """Comprueba el rol admin antes de ejecutar la vista."""
         if not g.current_user.is_admin:
             raise AccessDenied()
         return view(*args, **kwargs)

@@ -19,13 +19,17 @@ class UnitOfWork(ABC):
     orders: OrderRepository
 
     def __enter__(self) -> "UnitOfWork":
+        """Inicia la unidad de trabajo."""
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """Hace rollback de lo que no se haya confirmado con commit()."""
         self.rollback()
 
     @abstractmethod
-    def commit(self) -> None: ...
+    def commit(self) -> None:
+        """Confirma todos los cambios de la unidad de trabajo."""
 
     @abstractmethod
-    def rollback(self) -> None: ...
+    def rollback(self) -> None:
+        """Descarta los cambios no confirmados."""

@@ -1,3 +1,5 @@
+"""Punto de entrada: crea la aplicación y arranca el servidor de desarrollo."""
+
 import config
 from orderhub import create_app
 

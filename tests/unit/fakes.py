@@ -17,6 +17,8 @@ from orderhub.domain.exceptions import InvalidToken
 
 
 class FakeUserRepository(UserRepository):
+    """Usuarios en un diccionario indexado por nombre."""
+
     def __init__(self, users):
         self._users = {u.username: u for u in users}
 
@@ -30,6 +32,8 @@ class FakeUserRepository(UserRepository):
 
 
 class FakeProductRepository(ProductRepository):
+    """Productos en un diccionario; devuelve copias para simular la BD."""
+
     def __init__(self, products):
         self._products = {p.id: p for p in products}
 
@@ -47,6 +51,8 @@ class FakeProductRepository(ProductRepository):
 
 
 class FakeOrderRepository(OrderRepository):
+    """Órdenes en una lista con ids secuenciales."""
+
     def __init__(self):
         self._orders = []
 
@@ -60,6 +66,8 @@ class FakeOrderRepository(OrderRepository):
 
 
 class FakeUnitOfWork(UnitOfWork):
+    """Unit of Work en memoria que registra si se llamó a commit()."""
+
     def __init__(self, users=(), products=()):
         self.users = FakeUserRepository(users)
         self.products = FakeProductRepository(products)
@@ -74,6 +82,8 @@ class FakeUnitOfWork(UnitOfWork):
 
 
 class FakeNotifier(OrderNotifier):
+    """Guarda las órdenes notificadas para poder comprobarlas."""
+
     def __init__(self):
         self.notified = []
 
