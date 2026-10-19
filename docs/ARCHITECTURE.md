@@ -3,8 +3,9 @@
 > **Requisitos cubiertos:**
 > - **Primera entrega:** RNF-01.1 (arquitectura hexagonal, Repository Pattern, Dependency Injection), RF-01.1 (inicio de sesión), HU-03.
 > - **Segunda entrega:** RF-01.2 (hashing Argon2), RF-01.3 (sesión JWT), RF-01.4 (control de acceso por rol), RNF-01.2 (pruebas de login), RNF-01.3 (PEP 8 con `flake8` y `black`).
+> - **Tercera entrega:** RF-02 (catálogo e inventario: `GET /products`, `decrease_stock`, descuento transaccional), RNF-02.1 (configuración por variables de entorno, sin secretos en el código) y RNF-02.2 (todas las consultas parametrizadas, con una prueba que lo vigila).
 >
-> **Estado:** la persistencia sigue siendo SQLite (`orderhub.db`). Los secretos todavía se leen de `config.py`; pasar a `.env` es RNF-02.1, fuera de este alcance.
+> **Estado:** la persistencia sigue siendo SQLite (la ruta se configura con `DATABASE_PATH`). Toda la configuración sensible se lee del entorno o del archivo `.env` (ver sección 11).
 
 ## 1. Resumen del sistema
 
@@ -28,7 +29,8 @@ OrderHub es una API Flask que gestiona usuarios, catálogo de productos y órden
 | `@token_required` | Decorador web | Exige `Authorization: Bearer <token>` válido → si no, 401 | RF-01.3 |
 | `@admin_required` | Decorador web | Exige token válido con rol `admin` → 401 sin token, 403 con otro rol | RF-01.4 |
 | `error_handlers.py` | Adaptador web | Traduce `InvalidCredentials`/`InvalidToken` a 401, `AccessDenied` a 403 y `UserAlreadyExists` a 409 | — |
-| `schema.init_db` | Adaptador de salida | Guarda las contraseñas semilla con hash y migra las contraseñas legadas en texto plano | RF-01.2 |
+| `schema.init_db` | Adaptador de salida | Guarda con hash las contraseñas semilla (que llegan del entorno) y migra las contraseñas legadas en texto plano | RF-01.2 |
+| `config.load_settings` / `Settings` | Configuración | Lee `SECRET_KEY`, la ruta de la BD, la vigencia del token, el modo debug y las contraseñas semilla desde el entorno o el `.env`; rechaza claves ausentes, cortas o ya publicadas | RNF-02.1 |
 
 ### Endpoints
 
@@ -39,6 +41,7 @@ OrderHub es una API Flask que gestiona usuarios, catálogo de productos y órden
 | `POST /login` | Pública | Devuelve el usuario (sin contraseña) y un JWT |
 | `POST /create_order` | `@token_required` | Crea una orden a nombre del usuario del token |
 | `GET /get_all_orders_legacy` | `@admin_required` | Lista las órdenes de todos los usuarios |
+| `GET /products` | Pública | Lista los productos con su precio y stock actual (RF-02.1) |
 | `POST /products` | `@admin_required` | Crea un producto (operación administrativa) |
 
 ## 2. Regla de dependencias
@@ -121,7 +124,7 @@ tests/
 | **Adapter** | `Argon2PasswordHasher`, `JWTTokenService`, `Sqlite*Repository`, `ConsoleOrderNotifier` | Cada uno adapta una librería o tecnología externa (`argon2-cffi`, `PyJWT`, `sqlite3`, `logging`) a la interfaz que espera el núcleo. Por ejemplo, `Argon2PasswordHasher.verify` convierte las excepciones de argon2 en un `bool`. |
 | **Decorator** | `@token_required`, `@admin_required` (`auth_decorators.py`) | Agregan autenticación y autorización a una vista sin modificarla. `@admin_required` se construye sobre `@token_required`. |
 | **Dependency Injection** | `container.py`; constructores de `AuthService(uow_factory, password_hasher, token_service)`, `OrderService` y `ProductService` | Los servicios reciben sus dependencias. Los tests inyectan `FakePasswordHasher` y `FakeTokenService`; `build_container` acepta hasher y token service alternativos. |
-| **Unit of Work** | `UnitOfWork` / `SqliteUnitOfWork` | Una conexión y una transacción por caso de uso: `register`, `create_order` y `create_product` confirman con `commit()` o se deshacen solos. |
+| **Unit of Work** | `UnitOfWork` / `SqliteUnitOfWork` | Una conexión y una transacción por caso de uso: `register`, `create_order` y `create_product` confirman con `commit()` o se deshacen solos. En `create_order` garantiza que el stock solo baja si la orden se guarda (sección 12). |
 | **Repository** | `UserRepository` (`get_by_username`, `add`), `ProductRepository` (`get`, `add`, `update_stock`), `OrderRepository` | Ocultan el SQL parametrizado detrás de operaciones de dominio. |
 | **Application Factory** | `create_app()` | Crear la app con distintas configuraciones (producción y tests). |
 | **Factory Method** | `Product.create`, `Order.place` | Construir entidades válidas aplicando las reglas de negocio. |
@@ -234,19 +237,34 @@ flowchart TD
 | Contraseñas en BD | Texto plano | Hash Argon2id; las existentes se migran al arrancar |
 | Panel `/` | Botón de órdenes sin autenticación | Panel de pruebas: registro, login/logout, crear orden, crear producto y consultar órdenes; el token se guarda solo en memoria |
 
+**Tercera entrega:**
+
+| Elemento | Antes | Ahora |
+| :--- | :--- | :--- |
+| `GET /products` | No existía | Pública: 200 con `[{id, name, price, stock}]` |
+| Stock insuficiente | `InsufficientStock` | `InsufficientStockException` (sigue respondiendo 400 `{"error": "Stock insuficiente"}`) |
+| Arranque | `SECRET_KEY` escrita en `config.py` | Sin `SECRET_KEY` en el entorno la app no arranca (`ConfigError`) |
+| Servidor | `debug=True`, `0.0.0.0` fijos | `FLASK_DEBUG=false` y `FLASK_HOST=127.0.0.1` por defecto |
+| Usuarios semilla | Contraseñas escritas en `schema.py` | Se crean solo si `SEED_ADMIN_PASSWORD` / `SEED_CLIENT_PASSWORD` están definidas |
+
 Los cambios respecto al legado de la primera entrega siguen vigentes: inyección SQL eliminada, sin contraseña en las respuestas, cantidades inválidas → 400 y transacción atómica en `create_order`.
 
 ## 8. Calidad: pruebas y linters
 
-- **Pruebas** (`python -m pytest`): 67 pruebas.
+- **Pruebas** (`python -m pytest`): 103 pruebas.
   - `tests/unit/test_auth_service.py`: login exitoso (devuelve usuario y token) y login fallido (contraseña incorrecta, usuario inexistente, inyección SQL, campos vacíos, enviar el hash como contraseña), además de registro y validación de token.
   - `test_argon2_hasher.py` y `test_jwt_token_service.py`: prueban los adaptadores con las librerías reales (sal aleatoria, token expirado, firma ajena, token manipulado, `alg=none`).
   - `tests/integration/test_api.py`: 401, 403 y 409 de extremo a extremo y migración de contraseñas legadas.
+  - `tests/unit/test_order_service.py`: pedir más stock del disponible lanza `InsufficientStockException` y **no procesa la orden** (no se guarda, el stock no cambia, no hay commit sino rollback y no se notifica).
+  - `test_product_entity.py`: reglas de `decrease_stock`. La integración comprueba que un fallo al guardar la orden revierte el stock ya descontado.
+  - `test_config.py`: carga desde el entorno y el `.env`, valores por defecto seguros y rechazo de claves ausentes, cortas o publicadas.
+  - `test_sql_safety.py`: analiza el código de persistencia y falla si alguna consulta se arma con f-strings, concatenación, `.format()` o `%` (RNF-02.2).
 - **PEP 8:** `black --check .` sin cambios y `flake8` con 0 avisos. La configuración está en `pyproject.toml` (black, 88 columnas) y `.flake8` (88 columnas; ignora E203/W503 por compatibilidad con black).
 
 ## 9. Próximos pasos que esta estructura facilita
 
-- **RNF-02.1 (.env):** leer `SECRET_KEY`, la ruta de la BD y `token_expires_minutes` del entorno en `app.py`, y rotar la clave expuesta en `config.py`.
+- **Descuento de stock atómico en SQL:** `UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?` para cerrar la condición de carrera entre peticiones simultáneas (TD-08).
+- **Gestor de secretos:** en Kubernetes, inyectar las mismas variables desde un `Secret` (RNF-03.3) sin cambiar el código.
 - **PostgreSQL/SQLAlchemy:** agregar `adapters/outbound/persistence/postgres/` y cambiar una línea en `container.py`.
 - **RF-04.1 (notificación asíncrona):** otro adaptador de `OrderNotifier` (cola o correo).
 - **Revocación de tokens / refresh tokens:** se agregan detrás del puerto `TokenService` sin tocar los decoradores.
@@ -255,6 +273,7 @@ Los cambios respecto al legado de la primera entrega siguen vigentes: inyección
 
 ```bash
 pip install -r requirements.txt
+cp .env.example .env       # y completar SECRET_KEY y las contraseñas semilla
 python app.py              # http://localhost:5000
 python -m pytest -q        # pruebas unitarias y de integración
 black --check . && flake8  # estilo PEP 8
@@ -264,7 +283,8 @@ black --check . && flake8  # estilo PEP 8
 
 El panel permite probar todos los endpoints sin herramientas externas:
 
-- **Sesión:** registrarse, entrar (`admin / admin123` o `juan / 123456`) y cerrar sesión. Muestra el usuario y el rol activos.
+- **Sesión:** registrarse, entrar (`admin` o `juan`, con las contraseñas `SEED_*` del `.env`) y cerrar sesión. Muestra el usuario y el rol activos.
+- **Catálogo:** `GET /products` para ver el stock antes y después de crear una orden.
 - **Selector "Al llamar a la API enviar":** el token de la sesión, sin token o un token con la firma alterada, para comprobar los 401.
 - **Crear orden, crear producto y consultar órdenes.**
 - **Respuesta de la API:** método, ruta, código HTTP coloreado (verde 2xx, amarillo 400/404/409, rojo 401/403) y el JSON devuelto.
@@ -273,6 +293,99 @@ El panel permite probar todos los endpoints sin herramientas externas:
 Ejemplo de uso con token desde la terminal:
 
 ```bash
-curl -s -X POST localhost:5000/login -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}'
+curl -s localhost:5000/products
+curl -s -X POST localhost:5000/login -H "Content-Type: application/json" -d '{"username":"admin","password":"<SEED_ADMIN_PASSWORD>"}'
 curl -s -X POST localhost:5000/products -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"name":"Teclado","price":45,"stock":10}'
 ```
+
+## 11. Configuración por variables de entorno (RNF-02.1)
+
+`config.load_settings()` llama a `load_dotenv()` (que carga `.env` si existe, sin pisar las variables ya definidas en el sistema), lee `os.environ`, valida los valores y devuelve un `Settings` inmutable. `app.py` lo pasa a `build_container` y a `create_app`. Ningún otro módulo lee el entorno.
+
+| Variable | Obligatoria | Por defecto | Uso |
+| :--- | :---: | :--- | :--- |
+| `SECRET_KEY` | **Sí** | — | Firma de los JWT y `SECRET_KEY` de Flask. Mínimo 32 caracteres. Se rechazan la clave legada publicada y el valor de ejemplo. |
+| `DATABASE_PATH` | No | `orderhub.db` | Archivo SQLite. |
+| `JWT_EXPIRES_MINUTES` | No | `30` | Vigencia del token. |
+| `FLASK_DEBUG` | No | `false` | Depurador de Werkzeug (nunca en un entorno expuesto). |
+| `FLASK_HOST` / `FLASK_PORT` | No | `127.0.0.1` / `5000` | Dirección del servidor de desarrollo. |
+| `SEED_ADMIN_PASSWORD` / `SEED_CLIENT_PASSWORD` | No | vacío | Contraseñas de `admin` y `juan`, solo si la tabla `users` está vacía. Vacías → no se crean. |
+
+```mermaid
+flowchart LR
+    ENV[".env (local, ignorado por Git)<br/>o variables del sistema / Secret de K8s"] --> LD["load_dotenv()"]
+    LD --> LS["config.load_settings()<br/>valida y crea Settings"]
+    LS -- "ConfigError si falta SECRET_KEY,<br/>es corta o está publicada" --> STOP["La app no arranca"]
+    LS --> APP["app.py"]
+    APP --> BC["build_container(database_path, secret_key,<br/>jwt_expires_minutes, seed_users)"]
+    BC --> JWT["JWTTokenService(secret_key)"]
+    BC --> DB["init_db(database_path, seed_users)"]
+    APP --> RUN["app.run(host, port, debug)"]
+```
+
+- `.env` está en `.gitignore`; `.env.example` (versionado) documenta todas las variables sin valores reales.
+- La clave que estuvo en `config.py` sigue en el historial público de Git. Por eso se considera comprometida y `load_settings` se niega a usarla.
+
+## 12. Flujo de descuento de inventario (RF-02)
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant R as order_routes /create_order
+    participant S as OrderService
+    participant U as SqliteUnitOfWork
+    participant P as Product (dominio)
+    participant N as OrderNotifier
+
+    C->>R: POST {product_id, quantity} + Bearer token
+    R->>S: create_order(user_id del token, product_id, quantity)
+    S->>U: with uow: (abre conexión y transacción)
+    S->>U: products.get(product_id)
+    alt producto inexistente
+        S-->>R: ProductNotFound → 404
+    end
+    S->>P: decrease_stock(quantity)
+    alt quantity > stock
+        P-->>S: InsufficientStockException
+        S->>U: __exit__ → rollback()
+        S-->>R: 400 "Stock insuficiente" (no se guarda nada)
+    else quantity <= 0
+        P-->>S: InvalidInput → rollback → 400
+    end
+    S->>S: Order.place(...) calcula total
+    S->>U: products.update_stock(product)
+    S->>U: orders.add(order)
+    alt error de base de datos
+        U-->>S: excepción → rollback()
+        S-->>R: 500 (stock restaurado, sin orden)
+    end
+    S->>U: commit()
+    S->>N: order_created(order)
+    S-->>R: Order → 201
+    C->>R: GET /products → stock actualizado
+```
+
+**Garantías:**
+1. **RF-02.3:** `Product.decrease_stock` es la única regla de disponibilidad. Si `quantity > stock` lanza `InsufficientStockException` sin modificar el stock.
+2. **RF-02.2:** el stock se descuenta **antes** de guardar la orden y ambos cambios viajan en la misma transacción. Si algo falla antes de `commit()`, `UnitOfWork.__exit__` hace rollback.
+3. **RF-02.1:** `GET /products` (`ProductService.list_products` → `ProductRepository.list_all`) muestra el stock resultante.
+4. La notificación ocurre **después** del commit, así que nunca se avisa de una orden que no quedó guardada.
+
+> Cada orden tiene un solo producto (modelo heredado del legado), así que `decrease_stock` se invoca una vez por orden. Si en el futuro una orden tiene varios productos, se llamaría para cada uno dentro de la misma Unit of Work.
+
+### Funciones nuevas o modificadas (tercera entrega)
+
+| Función / clase | Descripción |
+| :--- | :--- |
+| `Product.decrease_stock(quantity)` | Descuenta el stock. `InvalidInput` si `quantity <= 0` e `InsufficientStockException` si `quantity > stock`. |
+| `InsufficientStockException` | Excepción de dominio (antes `InsufficientStock`), traducida a 400. |
+| `Order.place(...)` | Ya no valida stock: esa regla vive solo en `decrease_stock`. |
+| `OrderService.create_order(...)` | Llama a `decrease_stock` antes de guardar la orden, dentro de la Unit of Work. |
+| `ProductRepository.list_all()` / `SqliteProductRepository.list_all()` | Catálogo ordenado por id. |
+| `ProductService.list_products()` | Caso de uso de consulta del catálogo. |
+| `product_routes.list_products()` | `GET /products` (pública). |
+| `config.load_settings(environ=None, dotenv_path=None)` | Carga y valida la configuración. `ConfigError` si es inválida. |
+| `config.Settings` | Configuración inmutable: `secret_key`, `database_path`, `jwt_expires_minutes`, `debug`, `host`, `port`, `seed_users`. |
+| `schema.init_db(db_path, password_hasher, seed_users=())` | Los usuarios semilla llegan como parámetro y los productos se siembran por separado. |
+| `build_container(..., seed_users=())` | Pasa los usuarios semilla a `init_db`. |
+| `create_app(container, secret_key)` | El contenedor ahora es obligatorio (sin valores por defecto ocultos). |
