@@ -1,0 +1,5 @@
+venv
+/venv
+orderhub.db
+__pycache__
+/__pycache__

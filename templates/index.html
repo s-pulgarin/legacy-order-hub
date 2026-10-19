@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legacy OrderHub - Panel de Control</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f4f9; color: #333; }
+        h1 { color: #d9534f; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .badge { background: #d9534f; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        button { background: #0275d8; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #025aa5; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>📦 Legacy OrderHub API <span class="badge">v1.0.0-LEGACY</span></h1>
+        <p><strong>Estado del Sistema:</strong> Monolito no optimizado con alta deuda técnica.</p>
+        <p><strong>Atención Estudiantes:</strong> Este panel es solo para monitoreo visual inicial. Durante el curso deberán refactorizar tanto el backend como la infraestructura.</p>
+    </div>
+
+    <div class="card">
+        <h3>🔍 Probar Consulta de Órdenes Legadas</h3>
+        <button onclick="fetchOrders()">Cargar Órdenes desde la API (/get_all_orders_legacy)</button>
+        <h4>Respuesta de la API:</h4>
+        <pre id="output">// Haz clic en el botón para consultar la base de datos...</pre>
+    </div>
+
+    <script>
+        async function fetchOrders() {
+            const outputBlock = document.getElementById('output');
+            outputBlock.textContent = "Cargando órdenes desde el servidor...";
+            try {
+                const response = await fetch('/get_all_orders_legacy');
+                const data = await response.json();
+                outputBlock.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                outputBlock.textContent = "Error al conectar con la API: " + error;
+            }
+        }
+    </script>
+
+</body>
+</html>
