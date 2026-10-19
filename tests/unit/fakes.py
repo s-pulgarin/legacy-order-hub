@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from orderhub.application.ports.notifier import OrderNotifier
+from orderhub.application.ports.password_hasher import PasswordHasher
 from orderhub.application.ports.repositories import (
     OrderRepository,
     ProductRepository,
@@ -18,6 +19,11 @@ class FakeUserRepository(UserRepository):
     def get_by_username(self, username):
         return self._users.get(username)
 
+    def add(self, user):
+        user = replace(user, id=len(self._users) + 1)
+        self._users[user.username] = user
+        return user
+
 
 class FakeProductRepository(ProductRepository):
     def __init__(self, products):
@@ -26,6 +32,11 @@ class FakeProductRepository(ProductRepository):
     def get(self, product_id):
         product = self._products.get(product_id)
         return replace(product) if product else None
+
+    def add(self, product):
+        product = replace(product, id=len(self._products) + 1)
+        self._products[product.id] = product
+        return product
 
     def update_stock(self, product):
         self._products[product.id] = replace(product)
@@ -64,3 +75,18 @@ class FakeNotifier(OrderNotifier):
 
     def order_created(self, order):
         self.notified.append(order)
+
+
+class FakePasswordHasher(PasswordHasher):
+    """Hash reversible y legible, solo para pruebas: "hashed:<contraseña>"."""
+
+    PREFIX = "hashed:"
+
+    def hash(self, plain_password):
+        return self.PREFIX + plain_password
+
+    def verify(self, plain_password, password_hash):
+        return password_hash == self.PREFIX + plain_password
+
+    def is_hash(self, value):
+        return value.startswith(self.PREFIX)

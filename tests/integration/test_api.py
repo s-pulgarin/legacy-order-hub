@@ -80,3 +80,46 @@ def test_create_order_unknown_product_returns_404(client):
 def test_create_order_invalid_quantity_returns_400(client, quantity):
     response = client.post('/create_order', json={"user_id": 2, "product_id": 1, "quantity": quantity})
     assert response.status_code == 400
+
+
+def test_seed_passwords_are_stored_hashed(db_path, client):
+    conn = sqlite3.connect(db_path)
+    passwords = [row[0] for row in conn.execute("SELECT password FROM users")]
+    conn.close()
+    assert passwords and all(p.startswith("$argon2id$") for p in passwords)
+
+
+def test_legacy_plaintext_passwords_are_migrated(db_path):
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, password TEXT, role TEXT)")
+    conn.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')")
+    conn.commit()
+    conn.close()
+
+    app = create_app(container=build_container(db_path), secret_key="test")
+    response = app.test_client().post('/login', json={"username": "admin", "password": "admin123"})
+
+    assert response.status_code == 200
+    conn = sqlite3.connect(db_path)
+    stored = conn.execute("SELECT password FROM users WHERE username = 'admin'").fetchone()[0]
+    conn.close()
+    assert stored.startswith("$argon2id$")
+
+
+def test_register_then_login(client):
+    response = client.post('/register', json={"username": "maria", "password": "secreta123"})
+    assert response.status_code == 201
+    assert response.get_json()["user"] == {"id": 3, "username": "maria", "role": "client"}
+
+    response = client.post('/login', json={"username": "maria", "password": "secreta123"})
+    assert response.status_code == 200
+
+
+def test_register_duplicate_returns_409(client):
+    response = client.post('/register', json={"username": "admin", "password": "otraclave123"})
+    assert response.status_code == 409
+
+
+def test_register_short_password_returns_400(client):
+    response = client.post('/register', json={"username": "maria", "password": "corta"})
+    assert response.status_code == 400
