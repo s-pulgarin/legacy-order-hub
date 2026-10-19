@@ -331,3 +331,30 @@ def test_failure_while_saving_order_rolls_back_stock(
     conn = sqlite3.connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
     conn.close()
+
+
+# --- Inyección SQL en todos los puntos de entrada (RNF-02.2) -------------------
+
+
+def test_sql_injection_payloads_are_stored_as_plain_data(
+    client, db_path, admin_headers
+):
+    payload = "x'); DROP TABLE users; --"
+
+    register = client.post(
+        "/register", json={"username": payload, "password": "secreta123"}
+    )
+    product = client.post(
+        "/products",
+        json={"name": payload, "price": 1, "stock": 1},
+        headers=admin_headers,
+    )
+
+    assert register.status_code == 201
+    assert register.get_json()["user"]["username"] == payload
+    assert product.status_code == 201
+    assert client.get("/products").get_json()[-1]["name"] == payload
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 3
+    conn.close()
+    _login(client, payload, "secreta123")
