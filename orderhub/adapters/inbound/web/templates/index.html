@@ -7,12 +7,30 @@
     <style>
         body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f4f9; color: #333; }
         h1 { color: #d9534f; }
+        h3 { margin-top: 0; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .badge { background: #d9534f; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-        pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .grid .card { margin-bottom: 0; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+        .hint { color: #777; font-size: 13px; margin: 6px 0 12px; }
+        pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; min-height: 60px; }
         button { background: #0275d8; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
         button:hover { background: #025aa5; }
-        input { padding: 8px; margin-right: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #545b62; }
+        label { font-size: 14px; }
+        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        input[type=number] { width: 90px; }
+        .session { padding: 8px 12px; border-radius: 4px; background: #eee; display: inline-block; }
+        .session.admin { background: #fde2e1; color: #a12622; }
+        .session.client { background: #ddf0dd; color: #1e6b1e; }
+        .status { font-weight: bold; padding: 4px 8px; border-radius: 4px; color: white; background: #6c757d; }
+        .status.ok { background: #28a745; }
+        .status.client-error { background: #e0a800; }
+        .status.auth-error { background: #d9534f; }
+        table { border-collapse: collapse; font-size: 14px; }
+        td, th { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
     </style>
 </head>
 <body>
@@ -23,56 +41,188 @@
         <p><strong>Atención Estudiantes:</strong> Este panel es solo para monitoreo visual inicial. Durante el curso deberán refactorizar tanto el backend como la infraestructura.</p>
     </div>
 
+    <!-- Sesión: registro, login, logout y modo de envío del token -->
     <div class="card">
-        <h3>🔐 Iniciar sesión</h3>
-        <input id="username" placeholder="Usuario" autocomplete="username">
-        <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password">
-        <button onclick="login()">Entrar</button>
-        <p id="session">Sin sesión activa.</p>
+        <h3>🔐 Sesión</h3>
+        <div class="row">
+            <input id="username" placeholder="Usuario" autocomplete="username">
+            <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password">
+            <button onclick="login()">Entrar</button>
+            <button class="secondary" onclick="register()">Registrarse</button>
+            <button class="secondary" onclick="logout()">Cerrar sesión</button>
+        </div>
+        <p class="hint">Usuarios de prueba: <code>admin / admin123</code> (rol admin) · <code>juan / 123456</code> (rol client). El registro crea siempre usuarios <code>client</code> (contraseña de 8 caracteres o más).</p>
+        <div class="row">
+            <span id="session" class="session">Sin sesión activa</span>
+        </div>
+        <div class="row">
+            <label for="tokenMode"><strong>Al llamar a la API enviar:</strong></label>
+            <select id="tokenMode">
+                <option value="session">El token de la sesión</option>
+                <option value="none">Sin token (esperado: 401)</option>
+                <option value="tampered">Token manipulado (esperado: 401)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>🛒 Crear orden</h3>
+            <p class="hint"><code>POST /create_order</code> · requiere sesión. La orden queda a nombre del usuario del token.</p>
+            <div class="row">
+                <label>ID producto <input id="orderProduct" type="number" min="1" value="2"></label>
+                <label>Cantidad <input id="orderQuantity" type="number" value="1"></label>
+                <button onclick="createOrder()">Crear orden</button>
+            </div>
+            <p class="hint">Productos iniciales: 1 = Laptop Legada ($1200, stock 5) · 2 = Mouse USB ($15.50, stock 50). Prueba también cantidad 0, negativa o mayor al stock (esperado: 400).</p>
+        </div>
+
+        <div class="card">
+            <h3>🏷️ Crear producto</h3>
+            <p class="hint"><code>POST /products</code> · solo admin (client recibe 403).</p>
+            <div class="row">
+                <label>Nombre <input id="productName" value="Teclado"></label>
+                <label>Precio <input id="productPrice" type="number" step="0.01" value="45"></label>
+                <label>Stock <input id="productStock" type="number" value="10"></label>
+                <button onclick="createProduct()">Crear producto</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🔍 Consultar órdenes</h3>
+            <p class="hint"><code>GET /get_all_orders_legacy</code> · solo admin (client recibe 403).</p>
+            <button onclick="fetchOrders()">Cargar órdenes</button>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+        <h3>📨 Respuesta de la API</h3>
+        <div class="row">
+            <span id="status" class="status">—</span>
+            <code id="request">Haz clic en alguna acción para llamar a la API...</code>
+        </div>
+        <pre id="output">// La respuesta JSON aparecerá aquí</pre>
     </div>
 
     <div class="card">
-        <h3>🔍 Probar Consulta de Órdenes Legadas</h3>
-        <button onclick="fetchOrders()">Cargar Órdenes desde la API (/get_all_orders_legacy)</button>
-        <h4>Respuesta de la API:</h4>
-        <pre id="output">// Haz clic en el botón para consultar la base de datos...</pre>
+        <h3>✅ Resultados esperados</h3>
+        <table>
+            <tr><th>Acción</th><th>Sin token</th><th>Token manipulado</th><th>client (juan)</th><th>admin</th></tr>
+            <tr><td>Crear orden</td><td>401</td><td>401</td><td>201</td><td>201</td></tr>
+            <tr><td>Crear producto</td><td>401</td><td>401</td><td>403</td><td>201</td></tr>
+            <tr><td>Consultar órdenes</td><td>401</td><td>401</td><td>403</td><td>200</td></tr>
+        </table>
+        <p class="hint">Login con contraseña incorrecta o con <code>' OR '1'='1</code> → 401 · Registrar un usuario existente → 409 · Contraseña corta → 400.</p>
     </div>
 
     <script>
         // El token solo vive en memoria: se pierde al recargar la página.
         let token = null;
 
-        async function login() {
-            const sessionBlock = document.getElementById('session');
-            const response = await fetch('/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    username: document.getElementById('username').value,
-                    password: document.getElementById('password').value
-                })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                token = data.token;
-                sessionBlock.textContent = "Sesión activa: " + data.user.username + " (" + data.user.role + ")";
-            } else {
-                token = null;
-                sessionBlock.textContent = data.message;
+        function value(id) {
+            return document.getElementById(id).value;
+        }
+
+        function credentials() {
+            return { username: value('username'), password: value('password') };
+        }
+
+        // Devuelve la cabecera Authorization según el modo elegido en el selector.
+        function authHeader() {
+            const mode = value('tokenMode');
+            if (mode === 'none' || !token) return {};
+            if (mode === 'tampered') {
+                // Cambia el primer carácter de la firma: el servidor debe rechazarlo.
+                const cut = token.lastIndexOf('.') + 1;
+                const changed = token[cut] === 'A' ? 'B' : 'A';
+                return { 'Authorization': 'Bearer ' + token.slice(0, cut) + changed + token.slice(cut + 1) };
+            }
+            return { 'Authorization': 'Bearer ' + token };
+        }
+
+        // Llama a la API y muestra el método, la ruta, el código HTTP y el JSON de respuesta.
+        async function callApi(method, path, body, withAuth = true) {
+            const headers = withAuth ? authHeader() : {};
+            if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+            const statusBlock = document.getElementById('status');
+            const outputBlock = document.getElementById('output');
+            const sentToken = headers['Authorization'] ? ' (con token)' : (withAuth ? ' (sin token)' : '');
+            document.getElementById('request').textContent = method + ' ' + path + sentToken;
+            statusBlock.textContent = '...';
+            statusBlock.className = 'status';
+
+            try {
+                const response = await fetch(path, {
+                    method,
+                    headers,
+                    body: body === undefined ? undefined : JSON.stringify(body)
+                });
+                const data = await response.json().catch(() => null);
+                statusBlock.textContent = response.status + ' ' + response.statusText;
+                statusBlock.className = 'status ' + statusClass(response.status);
+                outputBlock.textContent = data === null ? '(sin cuerpo JSON)' : JSON.stringify(data, null, 2);
+                return { ok: response.ok, data };
+            } catch (error) {
+                statusBlock.textContent = 'Error';
+                statusBlock.className = 'status auth-error';
+                outputBlock.textContent = 'Error al conectar con la API: ' + error;
+                return { ok: false, data: null };
             }
         }
 
-        async function fetchOrders() {
-            const outputBlock = document.getElementById('output');
-            outputBlock.textContent = "Cargando órdenes desde el servidor...";
-            try {
-                const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-                const response = await fetch('/get_all_orders_legacy', { headers });
-                const data = await response.json();
-                outputBlock.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                outputBlock.textContent = "Error al conectar con la API: " + error;
+        function statusClass(code) {
+            if (code < 300) return 'ok';
+            if (code === 401 || code === 403) return 'auth-error';
+            return 'client-error';
+        }
+
+        function showSession(user) {
+            const sessionBlock = document.getElementById('session');
+            if (user) {
+                sessionBlock.textContent = 'Sesión activa: ' + user.username + ' (' + user.role + ')';
+                sessionBlock.className = 'session ' + user.role;
+            } else {
+                sessionBlock.textContent = 'Sin sesión activa';
+                sessionBlock.className = 'session';
             }
+        }
+
+        async function login() {
+            const result = await callApi('POST', '/login', credentials(), false);
+            token = result.ok ? result.data.token : null;
+            showSession(result.ok ? result.data.user : null);
+        }
+
+        async function register() {
+            await callApi('POST', '/register', credentials(), false);
+        }
+
+        function logout() {
+            token = null;
+            showSession(null);
+            document.getElementById('request').textContent = 'Sesión cerrada: el token se descartó en el navegador.';
+            document.getElementById('status').textContent = '—';
+            document.getElementById('status').className = 'status';
+        }
+
+        async function createOrder() {
+            await callApi('POST', '/create_order', {
+                product_id: Number(value('orderProduct')),
+                quantity: Number(value('orderQuantity'))
+            });
+        }
+
+        async function createProduct() {
+            await callApi('POST', '/products', {
+                name: value('productName'),
+                price: Number(value('productPrice')),
+                stock: Number(value('productStock'))
+            });
+        }
+
+        async function fetchOrders() {
+            await callApi('GET', '/get_all_orders_legacy');
         }
     </script>
 

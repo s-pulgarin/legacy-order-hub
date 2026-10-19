@@ -34,7 +34,7 @@ OrderHub es una API Flask que gestiona usuarios, catálogo de productos y órden
 
 | Método y ruta | Protección | Descripción |
 | :--- | :--- | :--- |
-| `GET /` | Pública | Panel HTML con formulario de login |
+| `GET /` | Pública | Panel HTML para probar todos los endpoints (ver sección 10) |
 | `POST /register` | Pública | Crea un usuario con rol `client` |
 | `POST /login` | Pública | Devuelve el usuario (sin contraseña) y un JWT |
 | `POST /create_order` | `@token_required` | Crea una orden a nombre del usuario del token |
@@ -99,7 +99,7 @@ orderhub/
     │   ├── product_routes.py    # POST /products
     │   ├── error_handlers.py    # excepciones de dominio → 400/401/403/404/409
     │   ├── serializers.py       # entidades → JSON (sin contraseña)
-    │   └── templates/index.html # panel con formulario de login
+    │   └── templates/index.html # panel de pruebas de la API
     └── outbound/
         ├── persistence/sqlite/  # repositorios, UnitOfWork, esquema y migración de contraseñas
         ├── security/
@@ -232,7 +232,7 @@ flowchart TD
 | `GET /get_all_orders_legacy` | Pública | Solo admin (401 / 403) |
 | `POST /products` | No existía | Solo admin: 201 / 400 / 401 / 403 |
 | Contraseñas en BD | Texto plano | Hash Argon2id; las existentes se migran al arrancar |
-| Panel `/` | Botón de órdenes sin autenticación | Formulario de login; el token se guarda solo en memoria y se envía como `Bearer` |
+| Panel `/` | Botón de órdenes sin autenticación | Panel de pruebas: registro, login/logout, crear orden, crear producto y consultar órdenes; el token se guarda solo en memoria |
 
 Los cambios respecto al legado de la primera entrega siguen vigentes: inyección SQL eliminada, sin contraseña en las respuestas, cantidades inválidas → 400 y transacción atómica en `create_order`.
 
@@ -260,7 +260,17 @@ python -m pytest -q        # pruebas unitarias y de integración
 black --check . && flake8  # estilo PEP 8
 ```
 
-Ejemplo de uso con token:
+### Panel de pruebas (`http://localhost:5000`)
+
+El panel permite probar todos los endpoints sin herramientas externas:
+
+- **Sesión:** registrarse, entrar (`admin / admin123` o `juan / 123456`) y cerrar sesión. Muestra el usuario y el rol activos.
+- **Selector "Al llamar a la API enviar":** el token de la sesión, sin token o un token con la firma alterada, para comprobar los 401.
+- **Crear orden, crear producto y consultar órdenes.**
+- **Respuesta de la API:** método, ruta, código HTTP coloreado (verde 2xx, amarillo 400/404/409, rojo 401/403) y el JSON devuelto.
+- **Tabla de resultados esperados** por rol, para comparar durante la demostración.
+
+Ejemplo de uso con token desde la terminal:
 
 ```bash
 curl -s -X POST localhost:5000/login -H "Content-Type: application/json" -d '{"username":"admin","password":"admin123"}'
