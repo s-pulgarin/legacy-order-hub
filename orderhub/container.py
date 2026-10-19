@@ -15,6 +15,7 @@ from orderhub.application.ports.password_hasher import PasswordHasher
 from orderhub.application.ports.token_service import TokenService
 from orderhub.application.services.auth_service import AuthService
 from orderhub.application.services.order_service import OrderService
+from orderhub.application.services.product_service import ProductService
 
 DEFAULT_TOKEN_EXPIRES_MINUTES = 30
 
@@ -25,6 +26,7 @@ class Container:
 
     auth_service: AuthService
     order_service: OrderService
+    product_service: ProductService
 
 
 def build_container(
@@ -50,4 +52,5 @@ def build_container(
     return Container(
         auth_service=AuthService(uow_factory, password_hasher, token_service),
         order_service=OrderService(uow_factory, ConsoleOrderNotifier()),
+        product_service=ProductService(uow_factory),
     )

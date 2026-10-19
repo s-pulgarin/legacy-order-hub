@@ -1,8 +1,11 @@
-"""Rutas HTTP de órdenes de compra (requieren sesión activa)."""
+"""Rutas HTTP de órdenes de compra (requieren sesión; el listado global, rol admin)."""
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from orderhub.adapters.inbound.web.auth_decorators import token_required
+from orderhub.adapters.inbound.web.auth_decorators import (
+    admin_required,
+    token_required,
+)
 from orderhub.adapters.inbound.web.serializers import order_to_dict
 from orderhub.domain.exceptions import InvalidInput
 
@@ -42,8 +45,8 @@ def create_order():
 
 
 @bp.route("/get_all_orders_legacy", methods=["GET"])
-@token_required
+@admin_required
 def get_orders():
-    """Lista todas las órdenes registradas."""
+    """Lista todas las órdenes de todos los usuarios (solo administradores)."""
     orders = _order_service().list_orders()
     return jsonify([order_to_dict(o) for o in orders]), 200

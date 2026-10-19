@@ -1,9 +1,11 @@
-"""Decoradores de la capa web que protegen rutas con el token de sesión (RF-01.3)."""
+"""Decoradores de la capa web que protegen rutas por sesión (RF-01.3) y por rol (RF-01.4)."""
 
 from functools import wraps
 from typing import Optional
 
 from flask import current_app, g, request
+
+from orderhub.domain.exceptions import AccessDenied
 
 
 def _bearer_token() -> Optional[str]:
@@ -25,6 +27,23 @@ def token_required(view):
     def wrapper(*args, **kwargs):
         auth_service = current_app.extensions["orderhub"].auth_service
         g.current_user = auth_service.verify_token(_bearer_token())
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def admin_required(view):
+    """Exige un token válido de un usuario con rol `admin`.
+
+    Sin token o con token inválido responde 401 (vía token_required); con un
+    token válido de otro rol lanza AccessDenied, que se traduce en 403 Forbidden.
+    """
+
+    @wraps(view)
+    @token_required
+    def wrapper(*args, **kwargs):
+        if not g.current_user.is_admin:
+            raise AccessDenied()
         return view(*args, **kwargs)
 
     return wrapper

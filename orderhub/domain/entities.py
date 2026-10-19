@@ -1,5 +1,6 @@
 """Entidades del dominio: Python puro, sin Flask ni base de datos."""
 
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -42,7 +43,7 @@ class Product:
         """Crea un producto nuevo validando nombre, precio y stock."""
         if not name or not name.strip():
             raise InvalidInput("El nombre del producto es obligatorio")
-        if price <= 0:
+        if not math.isfinite(price) or price <= 0:
             raise InvalidInput("El precio debe ser mayor que cero")
         if stock < 0:
             raise InvalidInput("El stock no puede ser negativo")

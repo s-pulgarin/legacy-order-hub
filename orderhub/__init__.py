@@ -4,7 +4,12 @@ import logging
 
 from flask import Flask
 
-from orderhub.adapters.inbound.web import auth_routes, home_routes, order_routes
+from orderhub.adapters.inbound.web import (
+    auth_routes,
+    home_routes,
+    order_routes,
+    product_routes,
+)
 from orderhub.adapters.inbound.web.error_handlers import register_error_handlers
 from orderhub.container import Container, build_container
 
@@ -27,5 +32,6 @@ def create_app(container: Container = None, secret_key: str = None) -> Flask:
     app.register_blueprint(home_routes.bp)
     app.register_blueprint(auth_routes.bp)
     app.register_blueprint(order_routes.bp)
+    app.register_blueprint(product_routes.bp)
     register_error_handlers(app)
     return app

@@ -219,3 +219,72 @@ def test_create_order_invalid_quantity_returns_400(client, client_headers, quant
         headers=client_headers,
     )
     assert response.status_code == 400
+
+
+# --- Control de acceso por rol (RF-01.4) ------------------------------------
+
+
+def test_admin_can_create_product(client, admin_headers):
+    response = client.post(
+        "/products",
+        json={"name": "Teclado", "price": 45.0, "stock": 10},
+        headers=admin_headers,
+    )
+    assert response.status_code == 201
+    assert response.get_json()["product"] == {
+        "id": 3,
+        "name": "Teclado",
+        "price": 45.0,
+        "stock": 10,
+    }
+
+
+def test_client_cannot_create_product_returns_403(client, db_path, client_headers):
+    response = client.post(
+        "/products",
+        json={"name": "Teclado", "price": 45.0, "stock": 10},
+        headers=client_headers,
+    )
+    assert response.status_code == 403
+    assert response.get_json() == {
+        "status": "error",
+        "message": "Acceso denegado: se requiere rol admin",
+    }
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 2
+    conn.close()
+
+
+def test_create_product_without_token_returns_401(client):
+    response = client.post("/products", json={"name": "Teclado", "price": 45.0})
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"name": "Teclado"}, {"name": "", "price": 1}, {"name": "T", "price": "x"}],
+)
+def test_create_product_invalid_data_returns_400(client, admin_headers, payload):
+    response = client.post("/products", json=payload, headers=admin_headers)
+    assert response.status_code == 400
+
+
+def test_list_all_orders_is_admin_only(client, admin_headers, client_headers):
+    assert client.get("/get_all_orders_legacy").status_code == 401
+    assert (
+        client.get("/get_all_orders_legacy", headers=client_headers).status_code
+        == 403
+    )
+    assert (
+        client.get("/get_all_orders_legacy", headers=admin_headers).status_code == 200
+    )
+
+
+def test_role_cannot_be_escalated_by_forging_token(client):
+    forged = "eyJhbGciOiJub25lIn0.eyJzdWIiOiIyIiwicm9sZSI6ImFkbWluIn0."
+    response = client.post(
+        "/products",
+        json={"name": "Teclado", "price": 45.0},
+        headers={"Authorization": f"Bearer {forged}"},
+    )
+    assert response.status_code == 401
