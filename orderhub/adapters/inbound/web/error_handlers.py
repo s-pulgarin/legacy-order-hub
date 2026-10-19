@@ -7,7 +7,7 @@ from werkzeug.exceptions import HTTPException
 
 from orderhub.domain.exceptions import (
     AccessDenied,
-    InsufficientStock,
+    InsufficientStockException,
     InvalidCredentials,
     InvalidInput,
     InvalidToken,
@@ -42,7 +42,7 @@ def register_error_handlers(app):
         """404: el producto no existe."""
         return jsonify({"error": e.message}), 404
 
-    @app.errorhandler(InsufficientStock)
+    @app.errorhandler(InsufficientStockException)
     @app.errorhandler(InvalidInput)
     def bad_request(e):
         """400: la petición no cumple las reglas de negocio."""

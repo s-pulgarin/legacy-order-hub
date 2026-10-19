@@ -2,8 +2,8 @@
 
 > **Proyecto:** Legacy OrderHub  
 > **Asignatura:** Actualización y Mantenimiento de Software  
-> **Versión del Documento:** 1.0.0  
-> **Estado:** Aprobado para Modernización  
+> **Versión del Documento:** 1.1.0 (seguimiento de implementación agregado en la sección 5)  
+> **Estado:** Aprobado para Modernización — en ejecución  
 
 ---
 
@@ -221,6 +221,48 @@ Esta tabla relaciona la estructura curricular del curso con los entregables prá
 | | 3.2 Control de Versiones Avanzado, 3.4.2 Orquestación y Autoscaling | **HU-07:** Orquestación en K8s y Autoescalado |
 | **Unidad IV: Despliegue y Observabilidad** | 4.2 Calidad y Pruebas, 4.3 Observabilidad y Monitoreo, 4.4 Ética y Seguridad | **HU-08:** Observabilidad (Prometheus & Logs JSON) |
 | | 4.1 Estrategias de Despliegue, 4.3 Monitoreo | **HU-09:** Despliegue Canary y Pruebas de Carga |
+
+---
+
+## 5. Seguimiento de Implementación
+
+Los requisitos de las secciones 2 y 3 no cambian. Esta sección registra cómo y dónde se implementó cada uno. El detalle técnico está en [`ARCHITECTURE.md`](ARCHITECTURE.md) y la deuda técnica en [`TECHNICAL_DEBT_LOG.md`](TECHNICAL_DEBT_LOG.md).
+
+| Requisito | Estado | Implementación |
+| :--- | :---: | :--- |
+| RF-01.1 Inicio de sesión | ✅ | `AuthService.login`, `POST /login` |
+| RF-01.2 Hash de contraseñas | ✅ | `PasswordHasher` + `Argon2PasswordHasher` |
+| RF-01.3 Sesión JWT | ✅ | `TokenService` + `JWTTokenService`, `@token_required` |
+| RF-01.4 Rol admin | ✅ | `@admin_required` (403) |
+| **RF-02.1** Consultar productos | ✅ | `GET /products` → `ProductService.list_products` → `ProductRepository.list_all` |
+| **RF-02.2** Actualizar stock al vender | ✅ | `OrderService.create_order` llama a `Product.decrease_stock` antes de guardar la orden, en la misma Unit of Work |
+| **RF-02.3** Rechazar compras sin stock | ✅ | `Product.decrease_stock` lanza `InsufficientStockException` (HTTP 400) |
+| RF-03.1 / RF-03.2 Registrar orden y calcular total | ✅ | `Order.place`, `POST /create_order` |
+| RF-03.3 Consistencia transaccional | ✅ | `SqliteUnitOfWork`: rollback ante cualquier error antes del `commit()` |
+| RF-03.4 Listar órdenes | ✅ | `GET /get_all_orders_legacy` (solo admin) |
+| RF-04.1 Notificación no bloqueante | 🟡 | Puerto `OrderNotifier` listo; falta un adaptador asíncrono |
+| RNF-01.1 Arquitectura hexagonal | ✅ | `domain/`, `application/`, `adapters/`, `container.py` |
+| RNF-01.2 Cobertura ≥ 80 % | 🟡 | 103 pruebas; falta medir la cobertura con `pytest-cov` |
+| RNF-01.3 PEP 8 | ✅ | `black` + `flake8` sin avisos |
+| **RNF-02.1** Cero secretos en el código | ✅ | `config.load_settings` con `python-dotenv` y `os.environ`; `.env.example` versionado y `.env` ignorado |
+| **RNF-02.2** Prevención de SQL Injection | ✅ | Todas las consultas usan parameter binding (`?`); `tests/unit/test_sql_safety.py` lo verifica automáticamente |
+| RNF-02.3 SAST en el flujo | 🟡 | Bandit ejecutado manualmente (ver bitácora); falta integrarlo en CI (HU-05) |
+
+### 5.1 Uso de variables de entorno (RNF-02.1)
+
+La configuración sensible ya no vive en el código. Al arrancar, `config.load_settings()` carga el archivo `.env` (local y excluido de Git) y lee `os.environ`:
+
+- **Obligatoria:** `SECRET_KEY` (firma de los JWT; mínimo 32 caracteres). Sin ella la aplicación no arranca, y se rechazan la clave legada que quedó publicada y el valor de ejemplo.
+- **Opcionales:** `DATABASE_PATH`, `JWT_EXPIRES_MINUTES`, `FLASK_DEBUG` (falso por defecto), `FLASK_HOST` (`127.0.0.1` por defecto), `FLASK_PORT`, `SEED_ADMIN_PASSWORD` y `SEED_CLIENT_PASSWORD`.
+- `.env.example` documenta todas las variables sin valores reales. En contenedores o Kubernetes (Unidad III) las mismas variables se inyectarán desde un `Secret`, sin cambiar el código.
+
+### 5.2 Flujo de descuento de inventario (RF-02)
+
+1. `POST /create_order` (con token) llega a `OrderService.create_order`.
+2. Dentro de una Unit of Work se obtiene el producto (404 si no existe).
+3. `Product.decrease_stock(quantity)` valida la disponibilidad. Si `quantity > stock` lanza `InsufficientStockException`: la Unit of Work hace rollback, no se guarda la orden y se responde 400.
+4. Si hay stock, se calcula el total, se guardan el nuevo stock y la orden y se hace `commit()`. Si cualquiera de esas escrituras falla, también hay rollback.
+5. Después del commit se notifica la orden. `GET /products` refleja el stock actualizado.
 
 ---
 *Este documento establece los criterios oficiales de aceptación para la evaluación práctica del curso.*

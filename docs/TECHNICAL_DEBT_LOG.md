@@ -35,6 +35,8 @@
 
 **Actualización (segunda entrega, rama `feature/auth-security`):** se resuelven **TD-03** (Argon2) y **TD-06** (JWT + roles), y avanza **TD-10** (67 pruebas). Detalle en [`ARCHITECTURE.md`](ARCHITECTURE.md), secciones 5 y 6.
 
+**Actualización (tercera entrega, rama `feature/inventory-secrets`):** se resuelven **TD-01** (SQL Injection en todo el código, con prueba de guardia), **TD-02** (secretos fuera del código), **TD-04** (debug y host por entorno) y **TD-16** (configuración por entorno). Avanzan TD-10 (103 pruebas) y TD-18. El nuevo análisis con Bandit está en la sección 4.4.
+
 ---
 
 ## 3. Registro de deuda técnica
@@ -49,7 +51,7 @@
 | **Impacto** | Cualquiera puede suplantar a cualquier usuario, incluido el administrador. |
 | **Remediación** | Consultas parametrizadas (`WHERE username = ?`) o un ORM, y comparar la contraseña en código, no en SQL. |
 | **Requisito** | RNF-02.2, HU-02 (CA-1 y CA-4) |
-| **Esfuerzo / Estado** | S · **En PR #1**: `SqliteUserRepository.get_by_username` usa consultas parametrizadas; prueba `test_login_sql_injection_is_rejected` → 401 |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (tercera entrega, RNF-02.2)**. En el PR #1 se parametrizó `/login`. Ahora se auditaron las 16 llamadas `execute`/`executemany` de los repositorios de usuarios, productos y órdenes y del esquema: todas usan SQL literal con `?`. `tests/unit/test_sql_safety.py` analiza la capa de persistencia y **falla si aparece un f-string, una concatenación, `.format()` o `%` en una consulta**. Las pruebas de integración envían `' OR '1'='1` y `x'); DROP TABLE users; --` en login, registro y productos: se guardan como texto y la tabla sigue intacta. Bandit: 0 hallazgos B608. |
 
 ### 🔴 TD-02 · Credenciales y secretos en el código (`config.py`)
 | Campo | Detalle |
@@ -61,7 +63,7 @@
 | **Impacto** | Quien vea el repositorio obtiene las claves. Una `SECRET_KEY` conocida permite falsificar cookies y sesiones firmadas cuando se usen (RF-01.3). Además, los secretos quedan para siempre en el historial de Git. |
 | **Remediación** | Leer la configuración desde variables de entorno (`.env` en `.gitignore`, más un `.env.example` sin valores reales) y rotar las claves expuestas. |
 | **Requisito** | RNF-02.1, HU-02 (CA-3), regla del proyecto "Cero Tolerancia a Secretos" |
-| **Esfuerzo / Estado** | S · **Abierto** |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (tercera entrega, RNF-02.1)**. `config.py` ya no contiene valores: `load_settings()` lee `os.environ` mediante `python-dotenv`. Se eliminaron `DB_PASS`/`DB_*` (no se usaban) y la `SECRET_KEY` escrita. `SECRET_KEY` es obligatoria (sin ella la app no arranca) y debe tener al menos 32 caracteres. Las contraseñas semilla también vienen del entorno (`SEED_*_PASSWORD`). `.env` está en `.gitignore` y `.env.example` documenta las variables sin valores reales. **Rotación:** la clave antigua sigue en el historial público de Git, por lo que se considera comprometida y `load_settings()` la rechaza explícitamente. Bandit: 0 hallazgos B105 sobre secretos reales. |
 
 ### 🔴 TD-03 · Contraseñas en texto plano
 | Campo | Detalle |
@@ -73,7 +75,7 @@
 | **Impacto** | Una fuga de `orderhub.db` expone todas las contraseñas, reutilizables en otros servicios. |
 | **Remediación** | Guardar las contraseñas con hash bcrypt o argon2, migrar las existentes y sacar la semilla del código. |
 | **Requisito** | RF-01.2, HU-02 (CA-2) |
-| **Esfuerzo / Estado** | M · ✅ **Resuelto (segunda entrega)**: puerto `PasswordHasher` + `Argon2PasswordHasher` (Argon2id). La semilla se guarda con hash y las contraseñas legadas en texto plano se migran al arrancar (`schema._migrate_plaintext_passwords`). Las contraseñas semilla siguen escritas en el código hasta RNF-02.1. |
+| **Esfuerzo / Estado** | M · ✅ **Resuelto (segunda entrega)**: puerto `PasswordHasher` + `Argon2PasswordHasher` (Argon2id). La semilla se guarda con hash y las contraseñas legadas en texto plano se migran al arrancar (`schema._migrate_plaintext_passwords`). Desde la tercera entrega las contraseñas semilla ya no están en el código: llegan de `SEED_ADMIN_PASSWORD` y `SEED_CLIENT_PASSWORD`. |
 
 ### 🔴 TD-04 · Depurador de Werkzeug expuesto a la red
 | Campo | Detalle |
@@ -85,7 +87,7 @@
 | **Impacto** | Ante un error, el depurador interactivo permite ejecutar código Python en el servidor (protegido solo por un PIN). |
 | **Remediación** | Sacar `debug` y `host` a la configuración por entorno (desactivados por defecto) y usar un servidor WSGI de producción (gunicorn). |
 | **Requisito** | RNF-02.1, RNF-03.1 |
-| **Esfuerzo / Estado** | S · **Abierto** |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (tercera entrega)**: `app.run(host=settings.host, port=settings.port, debug=settings.debug)` con valores seguros por defecto (`FLASK_DEBUG=false`, `FLASK_HOST=127.0.0.1`). Bandit ya no reporta B201 ni B104. Falta el servidor WSGI de producción (gunicorn) para la contenerización (HU-06). |
 
 ### 🟠 TD-05 · Exposición de datos sensibles en respuestas y logs
 | Campo | Detalle |
@@ -153,7 +155,7 @@
 | **Impacto** | Cada cambio corre un riesgo alto de regresión. |
 | **Remediación** | pytest con pruebas unitarias (con mocks o fakes) y de integración; cobertura ≥ 80 %. |
 | **Requisito** | RNF-01.2, HU-04 |
-| **Esfuerzo / Estado** | M · **Parcial**: 22 pruebas en el PR #1 y 67 en la segunda entrega; falta medir cobertura con `pytest-cov` |
+| **Esfuerzo / Estado** | M · **Parcial**: 22 pruebas en el PR #1, 67 en la segunda entrega y 103 en la tercera; falta medir cobertura con `pytest-cov` |
 
 ### 🟠 TD-11 · Dependencias con vulnerabilidades conocidas
 | Campo | Detalle |
@@ -204,7 +206,7 @@
 | **Ubicación** | `app.py:6-9` (app global + `init_db()`), `database.py:4` (`'orderhub.db'` fija y relativa al directorio de trabajo), `app.py:87` (puerto fijo) |
 | **Descripción** | Importar el módulo crea o modifica la base de datos. No se pueden crear instancias con otra configuración (por ejemplo, para pruebas). `config.DB_NAME` no coincide con el archivo que se usa realmente. |
 | **Requisito** | RNF-02.1, RNF-03 |
-| **Esfuerzo / Estado** | S · **Parcial en PR #1** (`create_app()` con contenedor inyectable; la ruta de la BD y el puerto siguen fijos) |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (tercera entrega)**: la ruta de la BD, el puerto, el host, el modo debug y la vigencia del token vienen del entorno. `create_app(container, secret_key)` ya no tiene valores ocultos y solo `app.py` lee la configuración. |
 
 ### 🟡 TD-17 · Formato de errores inconsistente
 | Campo | Detalle |
@@ -213,7 +215,7 @@
 | **Esfuerzo / Estado** | S · **Abierto** (el PR #1 centraliza el manejo en `error_handlers.py`, pero conserva los formatos por compatibilidad) |
 
 ### 🟢 TD-18 · Código y configuración muertos
-`import sqlite3` sin uso (`app.py:2`); `DB_HOST/DB_USER/DB_PASS/DB_NAME` sin uso (`config.py`); comentario con HTML antiguo (`app.py:14`); `SECRET_KEY` configurada sin sesiones. · S · **Abierto**
+`import sqlite3` sin uso (`app.py:2`); `DB_HOST/DB_USER/DB_PASS/DB_NAME` sin uso (`config.py`); comentario con HTML antiguo (`app.py:14`); `SECRET_KEY` configurada sin sesiones. · S · **Parcial**: `import sqlite3`, el comentario HTML y los `DB_*` desaparecieron con la refactorización y la tercera entrega, y `SECRET_KEY` ahora firma los JWT. Queda `database.py`, conservado a propósito como referencia del legado.
 
 ### 🟢 TD-19 · Magic strings y nombres incoherentes
 `'PENDING'` y `'orderhub.db'` escritos en el código; la función `get_orders` responde en la ruta `/get_all_orders_legacy`; rutas con verbos (`/create_order`) en lugar de recursos REST (`POST /orders`). · S · **Abierto**
@@ -261,6 +263,18 @@ Conclusión: el SAST y el SCA deben correr en CI (HU-05), pero no reemplazan la 
 
 ---
 
+### 4.4 Nuevo análisis con Bandit (tercera entrega)
+Comando: `bandit -r orderhub app.py config.py`.
+
+| Hallazgo legado | Antes | Ahora |
+| :--- | :--- | :--- |
+| B608 SQL construido con texto (`app.py:25`) | 1 | **0** |
+| B105 contraseñas escritas (`config.py:5`, `config.py:7`) | 2 | **0** |
+| B201 Flask `debug=True` | 1 | **0** |
+| B104 escucha en `0.0.0.0` | 1 | **0** |
+
+Queda **1 hallazgo Low, falso positivo**: B105 en `auth_routes.py` por la cadena `"token_type": "Bearer"`, que es el nombre del esquema de autenticación y no una contraseña. Se documenta aquí en lugar de silenciarlo con `# nosec`.
+
 ## 5. Priorización recomendada
 
 | Orden | Ítems | Motivo |
@@ -279,3 +293,4 @@ Conclusión: el SAST y el SCA deben correr en CI (HU-05), pero no reemplazan la 
 | :--- | :--- |
 | 2026-10-19 | Auditoría inicial (HU-01): Bandit, pip-audit, revisión con IA y verificación dinámica. 20 ítems registrados. |
 | 2026-10-19 | Segunda entrega: TD-03 y TD-06 resueltos; TD-10 actualizado. |
+| 2026-10-19 | Tercera entrega: TD-01 (SQLi) y TD-02 (secretos) resueltos, junto con TD-04 y TD-16; TD-10 y TD-18 actualizados; nuevo análisis con Bandit (4.4). |

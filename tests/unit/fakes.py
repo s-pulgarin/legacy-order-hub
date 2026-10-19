@@ -46,6 +46,9 @@ class FakeProductRepository(ProductRepository):
         self._products[product.id] = product
         return product
 
+    def list_all(self):
+        return [replace(p) for p in self._products.values()]
+
     def update_stock(self, product):
         self._products[product.id] = replace(product)
 
@@ -73,12 +76,14 @@ class FakeUnitOfWork(UnitOfWork):
         self.products = FakeProductRepository(products)
         self.orders = FakeOrderRepository()
         self.committed = False
+        self.rolled_back = False
 
     def commit(self):
         self.committed = True
 
     def rollback(self):
-        pass
+        if not self.committed:
+            self.rolled_back = True
 
 
 class FakeNotifier(OrderNotifier):

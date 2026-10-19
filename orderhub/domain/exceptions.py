@@ -44,8 +44,8 @@ class ProductNotFound(DomainError):
     message = "Producto no encontrado"
 
 
-class InsufficientStock(DomainError):
-    """No hay unidades suficientes para la cantidad pedida."""
+class InsufficientStockException(DomainError):
+    """Se pidieron más unidades de las que hay en stock (RF-02.3)."""
 
     message = "Stock insuficiente"
 

@@ -3,3 +3,6 @@ venv
 orderhub.db
 __pycache__
 /__pycache__
+# Variables de entorno locales (secretos): nunca se versionan
+.env
+!.env.example

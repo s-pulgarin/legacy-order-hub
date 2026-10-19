@@ -104,6 +104,16 @@ A continuación se resumen las áreas más críticas identificadas en el sistema
 3.Instalar las dependencias legadas:
   ```bash
   pip install -r requirements.txt
-   
+  ```
 
-   
+4. Configurar las variables de entorno (RNF-02.1). Copiar la plantilla y completar `SECRET_KEY` (y, si se quieren usuarios semilla, `SEED_ADMIN_PASSWORD` y `SEED_CLIENT_PASSWORD`). El archivo `.env` no se sube al repositorio:
+   ```bash
+   cp .env.example .env
+   python -c "import secrets; print(secrets.token_urlsafe(48))"
+   ```
+
+5. Ejecutar la aplicación y las pruebas:
+   ```bash
+   python app.py
+   python -m pytest
+   ```

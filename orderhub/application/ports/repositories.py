@@ -34,6 +34,10 @@ class ProductRepository(ABC):
         """Persiste un producto nuevo y lo devuelve con su `id` asignado."""
 
     @abstractmethod
+    def list_all(self) -> List[Product]:
+        """Devuelve todos los productos del catálogo con su stock actual."""
+
+    @abstractmethod
     def update_stock(self, product: Product) -> None:
         """Guarda el stock actual de `product`."""
 

@@ -8,6 +8,7 @@ from orderhub import create_app
 from orderhub.container import build_container
 
 SECRET = "clave-de-pruebas-de-al-menos-32-bytes!!"
+SEED_USERS = [("admin", "admin123", "admin"), ("juan", "123456", "client")]
 
 
 @pytest.fixture
@@ -17,7 +18,10 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def client(db_path):
-    app = create_app(container=build_container(db_path, SECRET), secret_key=SECRET)
+    app = create_app(
+        container=build_container(db_path, SECRET, seed_users=SEED_USERS),
+        secret_key=SECRET,
+    )
     app.config["TESTING"] = True
     return app.test_client()
 
@@ -102,7 +106,10 @@ def test_legacy_plaintext_passwords_are_migrated(db_path):
     conn.commit()
     conn.close()
 
-    app = create_app(container=build_container(db_path, SECRET), secret_key=SECRET)
+    app = create_app(
+        container=build_container(db_path, SECRET, seed_users=SEED_USERS),
+        secret_key=SECRET,
+    )
     response = app.test_client().post(
         "/login", json={"username": "admin", "password": "admin123"}
     )
@@ -285,3 +292,69 @@ def test_role_cannot_be_escalated_by_forging_token(client):
         headers={"Authorization": f"Bearer {forged}"},
     )
     assert response.status_code == 401
+
+
+# --- Catálogo e inventario (RF-02) --------------------------------------------
+
+
+def test_list_products_is_public_and_shows_current_stock(client, client_headers):
+    response = client.get("/products")
+    assert response.status_code == 200
+    assert response.get_json() == [
+        {"id": 1, "name": "Laptop Legada", "price": 1200.0, "stock": 5},
+        {"id": 2, "name": "Mouse USB", "price": 15.5, "stock": 50},
+    ]
+
+    client.post(
+        "/create_order", json={"product_id": 1, "quantity": 2}, headers=client_headers
+    )
+    assert client.get("/products").get_json()[0]["stock"] == 3
+
+
+def test_failure_while_saving_order_rolls_back_stock(
+    client, db_path, client_headers, monkeypatch
+):
+    """Si falla el INSERT de la orden después de descontar stock, se hace rollback."""
+    from orderhub.adapters.outbound.persistence.sqlite import order_repository
+
+    def failing_add(self, order):
+        raise RuntimeError("fallo simulado de la base de datos")
+
+    monkeypatch.setattr(order_repository.SqliteOrderRepository, "add", failing_add)
+
+    response = client.post(
+        "/create_order", json={"product_id": 1, "quantity": 2}, headers=client_headers
+    )
+
+    assert response.status_code == 500
+    assert _stock(db_path, 1) == 5
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+    conn.close()
+
+
+# --- Inyección SQL en todos los puntos de entrada (RNF-02.2) -------------------
+
+
+def test_sql_injection_payloads_are_stored_as_plain_data(
+    client, db_path, admin_headers
+):
+    payload = "x'); DROP TABLE users; --"
+
+    register = client.post(
+        "/register", json={"username": payload, "password": "secreta123"}
+    )
+    product = client.post(
+        "/products",
+        json={"name": payload, "price": 1, "stock": 1},
+        headers=admin_headers,
+    )
+
+    assert register.status_code == 201
+    assert register.get_json()["user"]["username"] == payload
+    assert product.status_code == 201
+    assert client.get("/products").get_json()[-1]["name"] == payload
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 3
+    conn.close()
+    _login(client, payload, "secreta123")

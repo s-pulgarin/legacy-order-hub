@@ -41,3 +41,12 @@ def test_create_product_con_datos_invalidos_lanza_invalid_input(
     with pytest.raises(InvalidInput):
         service.create_product(name, price, stock)
     assert not uow.committed
+
+
+def test_list_products_devuelve_catalogo_con_stock(service):
+    service.create_product("Teclado", 45.0, 10)
+    service.create_product("Monitor", 300.0, 2)
+
+    products = service.list_products()
+
+    assert [(p.name, p.stock) for p in products] == [("Teclado", 10), ("Monitor", 2)]

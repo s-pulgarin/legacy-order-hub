@@ -11,23 +11,20 @@ from orderhub.adapters.inbound.web import (
     product_routes,
 )
 from orderhub.adapters.inbound.web.error_handlers import register_error_handlers
-from orderhub.container import Container, build_container
-
-DEFAULT_DB_PATH = "orderhub.db"
+from orderhub.container import Container
 
 
-def create_app(container: Container = None, secret_key: str = None) -> Flask:
-    """Fábrica de la aplicación. Los tests pueden inyectar su propio `container`.
+def create_app(container: Container, secret_key: str) -> Flask:
+    """Fábrica de la aplicación Flask.
 
-    `secret_key` firma los JWT y se usa como SECRET_KEY de Flask.
+    Recibe el `container` ya armado (ver `app.py` y `build_container`) y la
+    `secret_key` leída del entorno; no tiene valores por defecto ocultos.
     """
     logging.basicConfig(level=logging.INFO)
 
     app = Flask(__name__, template_folder="adapters/inbound/web/templates")
     app.config["SECRET_KEY"] = secret_key
-    app.extensions["orderhub"] = container or build_container(
-        DEFAULT_DB_PATH, secret_key
-    )
+    app.extensions["orderhub"] = container
 
     app.register_blueprint(home_routes.bp)
     app.register_blueprint(auth_routes.bp)
