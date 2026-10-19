@@ -13,8 +13,12 @@ class OrderService:
         self._uow_factory = uow_factory
         self._notifier = notifier
 
-    def create_order(self, user_id: Optional[int], product_id: int, quantity: int) -> Order:
-        """Registra la orden y descuenta el stock en una sola transacción; luego notifica."""
+    def create_order(
+        self, user_id: Optional[int], product_id: int, quantity: int
+    ) -> Order:
+        """Registra la orden y descuenta el stock en una sola transacción; luego
+        notifica.
+        """
         with self._uow_factory() as uow:
             product = uow.products.get(product_id)
             if product is None:

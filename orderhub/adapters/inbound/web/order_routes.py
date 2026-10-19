@@ -20,7 +20,9 @@ def _order_service():
 @bp.route("/create_order", methods=["POST"])
 @token_required
 def create_order():
-    """Crea una orden a nombre del usuario del token (el `user_id` del cuerpo se ignora)."""
+    """Crea una orden a nombre del usuario del token (el `user_id` del cuerpo se
+    ignora).
+    """
     data = request.get_json(silent=True) or {}
     try:
         quantity = int(data.get("quantity", 1))

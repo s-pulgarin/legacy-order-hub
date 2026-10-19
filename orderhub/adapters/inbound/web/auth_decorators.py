@@ -1,4 +1,6 @@
-"""Decoradores de la capa web que protegen rutas por sesión (RF-01.3) y por rol (RF-01.4)."""
+"""Decoradores de la capa web que protegen rutas por sesión (RF-01.3) y por rol
+(RF-01.4).
+"""
 
 from functools import wraps
 from typing import Optional
@@ -9,7 +11,9 @@ from orderhub.domain.exceptions import AccessDenied
 
 
 def _bearer_token() -> Optional[str]:
-    """Extrae el token de la cabecera `Authorization: Bearer <token>`, o None si no está."""
+    """Extrae el token de la cabecera `Authorization: Bearer <token>`, o None si no
+    está.
+    """
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         return None

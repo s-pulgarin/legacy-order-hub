@@ -1,4 +1,4 @@
-"""Pruebas de extremo a extremo: Flask + servicios + SQLite real en un archivo temporal."""
+"""Pruebas de extremo a extremo: Flask + servicios + SQLite real en archivo temporal."""
 
 import sqlite3
 
@@ -57,9 +57,7 @@ def test_index_renders(client):
 
 
 def test_login_success_returns_token_and_hides_password(client):
-    response = client.post(
-        "/login", json={"username": "admin", "password": "admin123"}
-    )
+    response = client.post("/login", json={"username": "admin", "password": "admin123"})
     body = response.get_json()
     assert response.status_code == 200
     assert body["status"] == "success"
@@ -272,8 +270,7 @@ def test_create_product_invalid_data_returns_400(client, admin_headers, payload)
 def test_list_all_orders_is_admin_only(client, admin_headers, client_headers):
     assert client.get("/get_all_orders_legacy").status_code == 401
     assert (
-        client.get("/get_all_orders_legacy", headers=client_headers).status_code
-        == 403
+        client.get("/get_all_orders_legacy", headers=client_headers).status_code == 403
     )
     assert (
         client.get("/get_all_orders_legacy", headers=admin_headers).status_code == 200

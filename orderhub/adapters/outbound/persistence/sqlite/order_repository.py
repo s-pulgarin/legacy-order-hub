@@ -12,8 +12,15 @@ class SqliteOrderRepository(OrderRepository):
 
     def add(self, order: Order) -> Order:
         cursor = self._conn.execute(
-            "INSERT INTO orders (user_id, product_id, quantity, total, status) VALUES (?, ?, ?, ?, ?)",
-            (order.user_id, order.product_id, order.quantity, order.total, order.status),
+            "INSERT INTO orders (user_id, product_id, quantity, total, status)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (
+                order.user_id,
+                order.product_id,
+                order.quantity,
+                order.total,
+                order.status,
+            ),
         )
         return replace(order, id=cursor.lastrowid)
 

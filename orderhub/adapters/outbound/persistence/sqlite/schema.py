@@ -5,7 +5,7 @@ from orderhub.application.ports.password_hasher import PasswordHasher
 
 
 def init_db(db_path: str, password_hasher: PasswordHasher) -> None:
-    """Crea el esquema si no existe, carga los datos semilla y hashea contraseñas en texto plano.
+    """Crea el esquema, carga los datos semilla y hashea contraseñas en texto plano.
 
     Las contraseñas semilla se guardan ya hasheadas. Si la base viene del sistema
     legado (contraseñas en claro), se migran a hash en el arranque.

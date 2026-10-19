@@ -1,4 +1,6 @@
-"""Adaptadores falsos en memoria: permiten probar los servicios sin Flask ni base de datos."""
+"""Adaptadores falsos en memoria: permiten probar los servicios sin Flask ni base de
+datos.
+"""
 
 from dataclasses import replace
 

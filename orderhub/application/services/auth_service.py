@@ -1,4 +1,6 @@
-"""Casos de uso de autenticación: registro, inicio de sesión y validación de tokens (RF-01.1 a RF-01.3)."""
+"""Casos de uso de autenticación: registro, inicio de sesión y validación de tokens
+(RF-01.1 a RF-01.3).
+"""
 
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -27,7 +29,9 @@ class AuthSession:
 
 
 class AuthService:
-    """Registra usuarios, valida credenciales y tokens usando los puertos PasswordHasher y TokenService."""
+    """Registra usuarios, valida credenciales y tokens usando los puertos PasswordHasher
+    y TokenService.
+    """
 
     def __init__(
         self,
@@ -69,7 +73,9 @@ class AuthService:
         return user
 
     def login(self, username: Optional[str], password: Optional[str]) -> AuthSession:
-        """Valida las credenciales y emite un token de sesión; si no son válidas, lanza InvalidCredentials."""
+        """Valida las credenciales y emite un token de sesión; si no son válidas, lanza
+        InvalidCredentials.
+        """
         if not username or not password:
             raise InvalidCredentials()
 
@@ -85,7 +91,9 @@ class AuthService:
         )
 
     def verify_token(self, token: Optional[str]) -> TokenClaims:
-        """Devuelve la identidad contenida en `token`; lanza InvalidToken si falta o no es válido."""
+        """Devuelve la identidad contenida en `token`; lanza InvalidToken si falta o no
+        es válido.
+        """
         if not token:
             raise InvalidToken("Se requiere un token de sesión")
         return self._tokens.verify(token)

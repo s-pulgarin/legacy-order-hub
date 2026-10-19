@@ -12,7 +12,9 @@ bp = Blueprint("products", __name__)
 @bp.route("/products", methods=["POST"])
 @admin_required
 def create_product():
-    """Crea un producto (solo admin). 201 si se crea; 400 datos inválidos; 401/403 sin permisos."""
+    """Crea un producto (solo admin). 201 si se crea; 400 datos inválidos; 401/403 sin
+    permisos.
+    """
     data = request.get_json(silent=True) or {}
     try:
         price = float(data.get("price"))

@@ -10,7 +10,9 @@ from orderhub.application.ports.repositories import (
 
 
 class UnitOfWork(ABC):
-    """Uso: `with uow: ...; uow.commit()`. Si no se llama a commit o hay una excepción, se hace rollback."""
+    """Uso: `with uow: ...; uow.commit()`. Si no se llama a commit o hay una excepción,
+    se hace rollback.
+    """
 
     users: UserRepository
     products: ProductRepository
@@ -23,9 +25,7 @@ class UnitOfWork(ABC):
         self.rollback()
 
     @abstractmethod
-    def commit(self) -> None:
-        ...
+    def commit(self) -> None: ...
 
     @abstractmethod
-    def rollback(self) -> None:
-        ...
+    def rollback(self) -> None: ...

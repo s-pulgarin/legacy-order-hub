@@ -1,4 +1,6 @@
-"""Composition root: el único lugar que conoce las implementaciones concretas (Dependency Injection)."""
+"""Composition root: el único lugar que conoce las implementaciones concretas
+(Dependency Injection).
+"""
 
 from dataclasses import dataclass
 

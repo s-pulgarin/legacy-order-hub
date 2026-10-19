@@ -9,7 +9,9 @@ from orderhub.domain.entities import Product
 
 
 class SqliteProductRepository(ProductRepository):
-    """Implementa ProductRepository con consultas parametrizadas sobre la tabla `products`."""
+    """Implementa ProductRepository con consultas parametrizadas sobre la tabla
+    `products`.
+    """
 
     def __init__(self, conn: sqlite3.Connection):
         """Recibe la conexión de la Unit of Work en curso."""

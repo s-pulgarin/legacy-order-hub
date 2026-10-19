@@ -1,12 +1,20 @@
 from orderhub.adapters.outbound.persistence.sqlite.connection import get_connection
-from orderhub.adapters.outbound.persistence.sqlite.order_repository import SqliteOrderRepository
-from orderhub.adapters.outbound.persistence.sqlite.product_repository import SqliteProductRepository
-from orderhub.adapters.outbound.persistence.sqlite.user_repository import SqliteUserRepository
+from orderhub.adapters.outbound.persistence.sqlite.order_repository import (
+    SqliteOrderRepository,
+)
+from orderhub.adapters.outbound.persistence.sqlite.product_repository import (
+    SqliteProductRepository,
+)
+from orderhub.adapters.outbound.persistence.sqlite.user_repository import (
+    SqliteUserRepository,
+)
 from orderhub.application.ports.unit_of_work import UnitOfWork
 
 
 class SqliteUnitOfWork(UnitOfWork):
-    """Una conexión y una transacción por caso de uso; se crea una instancia nueva por petición."""
+    """Una conexión y una transacción por caso de uso; se crea una instancia nueva por
+    petición.
+    """
 
     def __init__(self, db_path: str):
         self._db_path = db_path

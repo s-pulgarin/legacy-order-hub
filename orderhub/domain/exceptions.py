@@ -1,4 +1,6 @@
-"""Errores de negocio. Los adaptadores los traducen a su propio protocolo (p. ej. códigos HTTP)."""
+"""Errores de negocio. Los adaptadores los traducen a su propio protocolo (p. ej.
+códigos HTTP).
+"""
 
 
 class DomainError(Exception):

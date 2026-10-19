@@ -7,5 +7,4 @@ from orderhub.domain.entities import Order
 
 class OrderNotifier(ABC):
     @abstractmethod
-    def order_created(self, order: Order) -> None:
-        ...
+    def order_created(self, order: Order) -> None: ...

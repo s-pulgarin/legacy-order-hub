@@ -22,7 +22,9 @@ def register():
 
 @bp.route("/login", methods=["POST"])
 def login():
-    """Valida usuario y contraseña y devuelve un JWT. 401 si las credenciales no son válidas."""
+    """Valida usuario y contraseña y devuelve un JWT. 401 si las credenciales no son
+    válidas.
+    """
     data = request.get_json(silent=True) or {}
     session = _auth_service().login(data.get("username"), data.get("password"))
     return (

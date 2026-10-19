@@ -73,7 +73,7 @@ class Order:
 
     @classmethod
     def place(cls, user_id: Optional[int], product: Product, quantity: int) -> "Order":
-        """Crea una orden nueva para `product`, valida la cantidad y calcula el total."""
+        """Crea una orden para `product`, valida la cantidad y calcula el total."""
         if quantity <= 0:
             raise InvalidInput("La cantidad debe ser mayor que cero")
         if not product.has_stock(quantity):

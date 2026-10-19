@@ -1,4 +1,4 @@
-"""Traduce las excepciones de dominio a respuestas HTTP (mismo formato que el legado)."""
+"""Traduce las excepciones de dominio a respuestas HTTP (formato del legado)."""
 
 import logging
 

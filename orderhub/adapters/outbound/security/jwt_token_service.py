@@ -11,12 +11,14 @@ from orderhub.domain.exceptions import InvalidToken
 
 
 def _utcnow() -> datetime:
-    """Hora actual en UTC (se inyecta para poder simular el paso del tiempo en tests)."""
+    """Hora actual en UTC (inyectable para simular el paso del tiempo en tests)."""
     return datetime.now(timezone.utc)
 
 
 class JWTTokenService(TokenService):
-    """Emite JWT firmados con HMAC-SHA256 que incluyen `sub`, `username`, `role`, `iat` y `exp`."""
+    """Emite JWT firmados con HMAC-SHA256 que incluyen `sub`, `username`, `role`, `iat`
+    y `exp`.
+    """
 
     ALGORITHM = "HS256"
 
@@ -46,7 +48,9 @@ class JWTTokenService(TokenService):
         return jwt.encode(payload, self._secret_key, algorithm=self.ALGORITHM)
 
     def verify(self, token: str) -> TokenClaims:
-        """Decodifica el token exigiendo firma válida, `exp` vigente y los campos de identidad."""
+        """Decodifica el token exigiendo firma válida, `exp` vigente y los campos de
+        identidad.
+        """
         try:
             payload = jwt.decode(
                 token,

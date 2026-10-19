@@ -1,4 +1,6 @@
-"""Pruebas unitarias de AuthService (RF-01.1 a RF-01.3) con adaptadores falsos en memoria."""
+"""Pruebas unitarias de AuthService (RF-01.1 a RF-01.3) con adaptadores falsos en
+memoria.
+"""
 
 import pytest
 
