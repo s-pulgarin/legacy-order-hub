@@ -6,4 +6,5 @@ PyJWT==2.15.1
 psycopg[binary]==3.3.7
 python-dotenv==1.2.4
 python-json-logger==4.2.0
+redis==8.1.0
 prometheus-client==0.26.0

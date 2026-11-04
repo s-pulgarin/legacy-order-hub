@@ -32,8 +32,10 @@ class SqliteBackend:
     def __init__(self, path):
         self.path = str(path)
 
-    def build(self, secret, seed_users):
-        return build_container(self.path, secret, seed_users=seed_users)
+    def build(self, secret, seed_users, redis_client=None):
+        return build_container(
+            self.path, secret, seed_users=seed_users, redis_client=redis_client
+        )
 
     def _scalar(self, sql, params=()):
         conn = sqlite3.connect(self.path)
@@ -87,9 +89,13 @@ class PostgresBackend:
         with psycopg.connect(url) as conn:
             conn.execute("DROP TABLE IF EXISTS orders, products, users CASCADE")
 
-    def build(self, secret, seed_users):
+    def build(self, secret, seed_users, redis_client=None):
         return build_container(
-            "unused.db", secret, seed_users=seed_users, database_url=self.url
+            "unused.db",
+            secret,
+            seed_users=seed_users,
+            database_url=self.url,
+            redis_client=redis_client,
         )
 
     def _scalar(self, sql, params=()):

@@ -14,6 +14,9 @@ from orderhub.adapters.outbound.notifications.console_notifier import (
 from orderhub.adapters.outbound.notifications.metrics_notifier import (
     MetricsOrderNotifier,
 )
+from orderhub.adapters.outbound.notifications.redis_notifier import (
+    RedisOrderNotifier,
+)
 from orderhub.adapters.outbound.persistence.postgres import schema as postgres_schema
 from orderhub.adapters.outbound.persistence.postgres.unit_of_work import (
     PostgresUnitOfWork,
@@ -54,6 +57,7 @@ def build_container(
     token_service: TokenService = None,
     seed_users: Iterable[SeedUser] = (),
     database_url: Optional[str] = None,
+    redis_client=None,
 ) -> Container:
     """Arma el grafo de dependencias: adaptadores concretos → servicios de aplicación.
 
@@ -63,14 +67,18 @@ def build_container(
 
     Persistencia: si llega `database_url` se usa PostgreSQL; si no, SQLite en
     `db_path`. Los casos de uso no notan la diferencia (mismos puertos).
+
+    Notificación: con `redis_client` cada orden también se encola en Redis para
+    que el worker la procese sin bloquear la respuesta HTTP (RF-04.1).
     """
     password_hasher = password_hasher or Argon2PasswordHasher()
     token_service = token_service or JWTTokenService(secret_key, token_expires_minutes)
     uow_factory = _persistence(db_path, database_url, password_hasher, seed_users)
     metrics = Metrics()
-    notifier = CompositeOrderNotifier(
-        [ConsoleOrderNotifier(), MetricsOrderNotifier(metrics)]
-    )
+    notifiers = [ConsoleOrderNotifier(), MetricsOrderNotifier(metrics)]
+    if redis_client is not None:
+        notifiers.append(RedisOrderNotifier(redis_client))
+    notifier = CompositeOrderNotifier(notifiers)
 
     return Container(
         auth_service=AuthService(uow_factory, password_hasher, token_service),

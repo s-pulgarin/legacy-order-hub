@@ -8,6 +8,8 @@ import io
 import json
 import logging
 
+import fakeredis
+
 import pytest
 
 from orderhub import create_app
@@ -433,3 +435,40 @@ def test_metric_labels_use_route_templates_not_raw_urls(client):
     assert _metric(client, "orderhub_http_requests_total", unmatched) == 2
     scraped = {"method": "GET", "endpoint": "/metrics", "status": "200"}
     assert _metric(client, "orderhub_http_requests_total", scraped) == 0
+
+
+# --- Notificación asíncrona por Redis (RF-04.1) ----------------------------------
+
+
+def test_created_order_is_queued_for_the_worker(backend):
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    container = backend.build(SECRET, SEED_USERS, redis_client=redis_client)
+    client = create_app(container=container, secret_key=SECRET).test_client()
+    headers = _login(client, "juan", "123456")
+
+    response = client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=headers
+    )
+    client.post(
+        "/create_order", json={"product_id": 1, "quantity": 99}, headers=headers
+    )
+
+    [raw] = redis_client.lrange("orderhub:order_events", 0, -1)
+    assert json.loads(raw)["order_id"] == response.get_json()["order_id"]
+
+
+def test_order_succeeds_even_if_redis_is_down(backend):
+    class DownRedis:
+        def lpush(self, *args):
+            raise ConnectionError("Redis no responde")
+
+    container = backend.build(SECRET, SEED_USERS, redis_client=DownRedis())
+    client = create_app(container=container, secret_key=SECRET).test_client()
+    headers = _login(client, "juan", "123456")
+
+    response = client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=headers
+    )
+
+    assert response.status_code == 201
+    assert backend.stock(2) == 49

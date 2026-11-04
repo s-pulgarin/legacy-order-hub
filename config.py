@@ -34,6 +34,7 @@ class Settings:
     secret_key: str
     database_path: str = "orderhub.db"
     database_url: Optional[str] = None
+    redis_url: Optional[str] = None
     jwt_expires_minutes: int = 30
     debug: bool = False
     host: str = "127.0.0.1"
@@ -68,6 +69,7 @@ def load_settings(
         secret_key=secret_key,
         database_path=environ.get("DATABASE_PATH", "").strip() or "orderhub.db",
         database_url=_database_url(environ),
+        redis_url=_redis_url(environ),
         jwt_expires_minutes=_int(environ, "JWT_EXPIRES_MINUTES", 30),
         debug=_bool(environ, "FLASK_DEBUG", False),
         host=environ.get("FLASK_HOST", "").strip() or "127.0.0.1",
@@ -148,4 +150,14 @@ def _database_url(environ: Mapping[str, str]) -> Optional[str]:
         return None
     if not url.startswith(("postgresql://", "postgres://")):
         raise ConfigError("DATABASE_URL debe empezar por postgresql://")
+    return url
+
+
+def _redis_url(environ: Mapping[str, str]) -> Optional[str]:
+    """URL de Redis (`REDIS_URL`); sin ella no se encolan notificaciones."""
+    url = environ.get("REDIS_URL", "").strip()
+    if not url:
+        return None
+    if not url.startswith(("redis://", "rediss://")):
+        raise ConfigError("REDIS_URL debe empezar por redis:// o rediss://")
     return url
