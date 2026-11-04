@@ -10,6 +10,8 @@ import logging
 import threading
 from typing import Callable, Optional
 
+from redis.exceptions import RedisError
+
 from orderhub.adapters.outbound.notifications.redis_notifier import (
     ORDER_EVENTS_QUEUE,
 )
@@ -17,6 +19,7 @@ from orderhub.adapters.outbound.notifications.redis_notifier import (
 logger = logging.getLogger(__name__)
 
 FAILED_SUFFIX = ":failed"
+RECONNECT_DELAY_SECONDS = 1
 
 
 def send_confirmation_email(event: dict) -> None:
@@ -43,6 +46,7 @@ class OrderEventsWorker:
     - Un mensaje que no es JSON válido se descarta y se registra.
     - Si el `handler` falla, el mensaje va a la cola `<cola>:failed` (dead
       letter) para revisarlo después, y el worker sigue con los demás.
+    - Si se corta la conexión con Redis, `run` espera y reintenta.
     """
 
     def __init__(
@@ -87,5 +91,15 @@ class OrderEventsWorker:
             "Worker de eventos de órdenes iniciado", extra={"queue": self._queue}
         )
         while not stop.is_set():
-            self.process_next()
+            try:
+                self.process_next()
+            except RedisError:
+                # Redis caído o conexión cortada: se registra y se reintenta, en
+                # lugar de tumbar el proceso. Los mensajes siguen en la cola.
+                logger.warning(
+                    "Error de conexión con Redis; reintentando en %s s",
+                    RECONNECT_DELAY_SECONDS,
+                    exc_info=True,
+                )
+                stop.wait(RECONNECT_DELAY_SECONDS)
         logger.info("Worker de eventos de órdenes detenido")

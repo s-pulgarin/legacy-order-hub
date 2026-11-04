@@ -25,8 +25,16 @@ def main() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
 
-    client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
-    OrderEventsWorker(client).run(stop)
+    poll_timeout = 5
+    # El timeout del socket debe superar la espera de BRPOP; si no, redis-py corta
+    # la conexión mientras el worker espera mensajes en una cola vacía.
+    client = redis.Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_timeout=poll_timeout + 5,
+        health_check_interval=30,
+    )
+    OrderEventsWorker(client, poll_timeout=poll_timeout).run(stop)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import threading
 
 import fakeredis
 import pytest
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from orderhub.adapters.inbound.queue.order_events_worker import (
     OrderEventsWorker,
@@ -97,3 +98,31 @@ def test_envio_de_correo_simulado_deja_constancia_en_el_log(caplog):
     [record] = caplog.records
     assert record.event == "order_confirmation_sent"
     assert record.order_id == 7
+
+
+def test_run_sobrevive_a_errores_de_conexion_con_redis(redis_client, monkeypatch):
+    monkeypatch.setattr(
+        "orderhub.adapters.inbound.queue.order_events_worker.RECONNECT_DELAY_SECONDS",
+        0,
+    )
+    stop = threading.Event()
+    processed = []
+    worker = OrderEventsWorker(redis_client, handler=processed.append, poll_timeout=1)
+    real_process_next = worker.process_next
+    calls = {"n": 0}
+
+    def flaky_process_next():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RedisTimeoutError("Timeout reading from socket")
+        result = real_process_next()
+        stop.set()
+        return result
+
+    worker.process_next = flaky_process_next
+    RedisOrderNotifier(redis_client).order_created(ORDER)
+
+    worker.run(stop)
+
+    assert calls["n"] == 2
+    assert [e["order_id"] for e in processed] == [7]
