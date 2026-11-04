@@ -242,11 +242,13 @@ Los requisitos de las secciones 2 y 3 no cambian. Esta sección registra cómo y
 | RF-03.4 Listar órdenes | ✅ | `GET /get_all_orders_legacy` (solo admin) |
 | RF-04.1 Notificación no bloqueante | 🟡 | Puerto `OrderNotifier` listo; falta un adaptador asíncrono |
 | RNF-01.1 Arquitectura hexagonal | ✅ | `domain/`, `application/`, `adapters/`, `container.py` |
-| RNF-01.2 Cobertura ≥ 80 % | 🟡 | 103 pruebas; falta medir la cobertura con `pytest-cov` |
+| RNF-01.2 Cobertura ≥ 80 % | ✅ | 114 pruebas, 99,8 % de cobertura con `pytest-cov`; `fail_under = 80` en `pyproject.toml` y en el CI |
 | RNF-01.3 PEP 8 | ✅ | `black` + `flake8` sin avisos |
 | **RNF-02.1** Cero secretos en el código | ✅ | `config.load_settings` con `python-dotenv` y `os.environ`; `.env.example` versionado y `.env` ignorado |
 | **RNF-02.2** Prevención de SQL Injection | ✅ | Todas las consultas usan parameter binding (`?`); `tests/unit/test_sql_safety.py` lo verifica automáticamente |
-| RNF-02.3 SAST en el flujo | 🟡 | Bandit ejecutado manualmente (ver bitácora); falta integrarlo en CI (HU-05) |
+| RNF-02.3 SAST en el flujo | ✅ | Job `security` del CI: Bandit (falla con severidad media o alta) y pip-audit |
+| RNF-04.1 Pipeline en cada PR | ✅ | `.github/workflows/ci.yml` (push y pull_request a `main`) |
+| RNF-04.2 Pruebas, análisis y build de imagen en CI | 🟡 | Pruebas y análisis estático listos; el build de la imagen llega con el `Dockerfile` |
 
 ### 5.1 Uso de variables de entorno (RNF-02.1)
 

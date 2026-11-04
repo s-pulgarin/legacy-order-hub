@@ -155,7 +155,7 @@
 | **Impacto** | Cada cambio corre un riesgo alto de regresión. |
 | **Remediación** | pytest con pruebas unitarias (con mocks o fakes) y de integración; cobertura ≥ 80 %. |
 | **Requisito** | RNF-01.2, HU-04 |
-| **Esfuerzo / Estado** | M · **Parcial**: 22 pruebas en el PR #1, 67 en la segunda entrega y 103 en la tercera; falta medir cobertura con `pytest-cov` |
+| **Esfuerzo / Estado** | M · ✅ **Resuelto (entrega CI)**: 114 pruebas, 99,8 % de cobertura (líneas y ramas) medida con `pytest-cov`; el umbral del 80 % se exige en local y en el CI. |
 
 ### 🟠 TD-11 · Dependencias con vulnerabilidades conocidas
 | Campo | Detalle |
@@ -166,7 +166,7 @@
 | **Agravante** | `requests` **no se usa** en ningún módulo: agrega superficie de ataque sin ningún beneficio. |
 | **Remediación** | Quitar `requests`, actualizar Werkzeug a ≥ 3.1.9 y agregar `pip-audit` al pipeline de CI. |
 | **Requisito** | RNF-02.3, HU-05 |
-| **Esfuerzo / Estado** | S · **Abierto** |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (entrega CI)**: se quitó `requests` (no se usaba y arrastraba urllib3 e idna vulnerables) y Werkzeug pasó a 3.1.9. `pip-audit -r requirements.txt` → *No known vulnerabilities found*, y ahora corre en cada PR (job `security`). |
 
 ### 🟡 TD-12 · Sin transacción explícita ni manejo de errores en `create_order`
 | Campo | Detalle |
@@ -294,3 +294,4 @@ Queda **1 hallazgo Low, falso positivo**: B105 en `auth_routes.py` por la cadena
 | 2026-10-19 | Auditoría inicial (HU-01): Bandit, pip-audit, revisión con IA y verificación dinámica. 20 ítems registrados. |
 | 2026-10-19 | Segunda entrega: TD-03 y TD-06 resueltos; TD-10 actualizado. |
 | 2026-10-19 | Tercera entrega: TD-01 (SQLi) y TD-02 (secretos) resueltos, junto con TD-04 y TD-16; TD-10 y TD-18 actualizados; nuevo análisis con Bandit (4.4). |
+| 2026-11-04 | Entrega CI: TD-10 (cobertura 99,8 %) y TD-11 (dependencias vulnerables) resueltos; Bandit y pip-audit integrados en GitHub Actions. |

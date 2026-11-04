@@ -251,7 +251,7 @@ Los cambios respecto al legado de la primera entrega siguen vigentes: inyección
 
 ## 8. Calidad: pruebas y linters
 
-- **Pruebas** (`python -m pytest`): 103 pruebas.
+- **Pruebas** (`python -m pytest`): 114 pruebas, **cobertura del 99,8 %** (líneas y ramas sobre `orderhub/` y `config.py`). `pyproject.toml` activa `pytest-cov` por defecto con `fail_under = 80`, así que `pytest` falla si la cobertura baja del 80 % (RNF-01.2).
   - `tests/unit/test_auth_service.py`: login exitoso (devuelve usuario y token) y login fallido (contraseña incorrecta, usuario inexistente, inyección SQL, campos vacíos, enviar el hash como contraseña), además de registro y validación de token.
   - `test_argon2_hasher.py` y `test_jwt_token_service.py`: prueban los adaptadores con las librerías reales (sal aleatoria, token expirado, firma ajena, token manipulado, `alg=none`).
   - `tests/integration/test_api.py`: 401, 403 y 409 de extremo a extremo y migración de contraseñas legadas.
@@ -260,6 +260,31 @@ Los cambios respecto al legado de la primera entrega siguen vigentes: inyección
   - `test_config.py`: carga desde el entorno y el `.env`, valores por defecto seguros y rechazo de claves ausentes, cortas o publicadas.
   - `test_sql_safety.py`: analiza el código de persistencia y falla si alguna consulta se arma con f-strings, concatenación, `.format()` o `%` (RNF-02.2).
 - **PEP 8:** `black --check .` sin cambios y `flake8` con 0 avisos. La configuración está en `pyproject.toml` (black, 88 columnas) y `.flake8` (88 columnas; ignora E203/W503 por compatibilidad con black).
+
+### 8.1 Integración continua (`.github/workflows/ci.yml`)
+
+Se ejecuta en cada push y Pull Request hacia `main` (RNF-04.1), con tres jobs en paralelo:
+
+| Job | Qué ejecuta | Requisito |
+| :--- | :--- | :--- |
+| `lint` | `black --check --diff .` y `flake8` | RNF-01.3 |
+| `security` | `bandit -r orderhub app.py config.py --severity-level medium` (SAST) y `pip-audit -r requirements.txt` | RNF-02.3 |
+| `tests` | `pytest -W error` con la puerta de cobertura del 80 %, en Python 3.11 y 3.14; publica `coverage.xml` | RNF-01.2 |
+
+```mermaid
+flowchart LR
+    PR["Push / Pull Request a main"] --> L[lint<br/>black + flake8]
+    PR --> S[security<br/>Bandit + pip-audit]
+    PR --> T["tests<br/>pytest + cobertura ≥ 80 %<br/>(3.11 y 3.14)"]
+    L --> OK{"¿Todos en verde?"}
+    S --> OK
+    T --> OK
+    OK -- sí --> M[PR listo para merge]
+    OK -- no --> X[Check en rojo: corregir antes de mezclar]
+```
+
+- **Dependencias:** `requirements.txt` solo tiene las de ejecución (las que irán en la imagen Docker). `requirements-dev.txt` agrega pruebas, linters y escáneres.
+- **RNF-04.2 (construir la imagen):** el job `docker build` se agrega junto con el `Dockerfile` en la entrega de contenerización.
 
 ## 9. Próximos pasos que esta estructura facilita
 
@@ -272,10 +297,11 @@ Los cambios respecto al legado de la primera entrega siguen vigentes: inyección
 ## 10. Cómo ejecutar
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # o requirements.txt si solo se va a ejecutar
 cp .env.example .env       # y completar SECRET_KEY y las contraseñas semilla
 python app.py              # http://localhost:5000
-python -m pytest -q        # pruebas unitarias y de integración
+python -m pytest -q        # pruebas + reporte de cobertura (falla si < 80 %)
+bandit -r orderhub app.py config.py --severity-level medium && pip-audit -r requirements.txt
 black --check . && flake8  # estilo PEP 8
 ```
 
