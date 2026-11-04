@@ -1,0 +1,76 @@
+# Integración continua (RNF-04.1, RNF-04.2, RNF-02.3, RNF-01.2, RNF-01.3).
+# Se ejecuta en cada push y en cada Pull Request hacia main. Si cualquier
+# paso falla, el check queda en rojo y el PR no debería mezclarse.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Estilo PEP 8 (black + flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: black
+        run: black --check --diff .
+      - name: flake8
+        run: flake8
+
+  security:
+    name: Seguridad (Bandit SAST + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Bandit (falla con hallazgos de severidad media o alta)
+        run: bandit -r orderhub app.py config.py --severity-level medium
+      - name: pip-audit (vulnerabilidades conocidas en dependencias de ejecución)
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+  tests:
+    name: Pruebas y cobertura (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: pytest (falla si la cobertura baja del 80 %)
+        run: python -m pytest -W error --cov-report=xml
+      - name: Publicar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: ignore

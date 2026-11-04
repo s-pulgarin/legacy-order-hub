@@ -8,3 +8,13 @@ extend-exclude = '''
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["orderhub", "config"]
+
+[tool.coverage.report]
+# RNF-01.2: cobertura mínima del 80 %; por debajo, pytest (y el CI) fallan.
+fail_under = 80
+skip_empty = true

@@ -101,9 +101,9 @@ A continuación se resumen las áreas más críticas identificadas en el sistema
    # En Windows:
    venv\Scripts\activate
 
-3.Instalar las dependencias legadas:
+3. Instalar las dependencias. `requirements.txt` contiene solo las de ejecución; `requirements-dev.txt` agrega pruebas, linters y escáneres de seguridad:
   ```bash
-  pip install -r requirements.txt
+  pip install -r requirements-dev.txt
   ```
 
 4. Configurar las variables de entorno (RNF-02.1). Copiar la plantilla y completar `SECRET_KEY` (y, si se quieren usuarios semilla, `SEED_ADMIN_PASSWORD` y `SEED_CLIENT_PASSWORD`). El archivo `.env` no se sube al repositorio:

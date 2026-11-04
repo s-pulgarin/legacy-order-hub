@@ -358,3 +358,8 @@ def test_sql_injection_payloads_are_stored_as_plain_data(
     assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 3
     conn.close()
     _login(client, payload, "secreta123")
+
+
+def test_unknown_route_keeps_flask_404(client):
+    response = client.get("/no-existe")
+    assert response.status_code == 404
