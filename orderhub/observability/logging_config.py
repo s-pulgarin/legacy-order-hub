@@ -37,6 +37,7 @@ def build_formatter(json_format: bool) -> logging.Formatter:
             style="{",
             rename_fields={"levelname": "level", "name": "logger"},
             timestamp=True,
+            json_ensure_ascii=False,
         )
     return logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
 

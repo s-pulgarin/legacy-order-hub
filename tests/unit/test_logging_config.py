@@ -40,6 +40,15 @@ def test_cada_registro_es_json_con_timestamp_nivel_y_contexto(restore_root_logge
     assert (record["product_id"], record["stock"]) == (1, 2)
 
 
+def test_las_tildes_se_escriben_sin_escapar(restore_root_logger):
+    stream = io.StringIO()
+    configure_logging("INFO", json_format=True, stream=stream)
+
+    logging.getLogger("orderhub.prueba").info("Petición atendida")
+
+    assert "Petición atendida" in stream.getvalue()
+
+
 def test_respeta_el_nivel_configurado(restore_root_logger):
     stream = io.StringIO()
     configure_logging("WARNING", json_format=True, stream=stream)
