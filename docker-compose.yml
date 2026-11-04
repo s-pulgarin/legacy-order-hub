@@ -1,0 +1,113 @@
+# Entorno de desarrollo completo de OrderHub (RNF-03.2).
+#
+#   docker compose up -d --build     # levanta todo
+#   docker compose logs -f api       # logs JSON de la API
+#   docker compose down              # detiene (los datos de PostgreSQL se conservan)
+#
+#   API          http://localhost:8000
+#   Prometheus   http://localhost:9090
+#   Grafana      http://localhost:3000  (usuario admin, clave GRAFANA_ADMIN_PASSWORD)
+#
+# Toma los secretos de .env (ver .env.example): SECRET_KEY, POSTGRES_PASSWORD,
+# GRAFANA_ADMIN_PASSWORD y las contraseñas semilla.
+name: orderhub
+
+x-app: &app
+  build: .
+  image: orderhub:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://orderhub:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}@db:5432/orderhub
+    REDIS_URL: redis://redis:6379/0
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [frontend, backend]
+
+  worker:
+    <<: *app
+    command: ["python", "worker.py"]
+    healthcheck:
+      disable: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [backend]
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: orderhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: orderhub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderhub -d orderhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on: [api]
+    restart: unless-stopped
+    networks: [frontend]
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Define GRAFANA_ADMIN_PASSWORD en .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/orderhub-red.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+    restart: unless-stopped
+    networks: [frontend]
+
+networks:
+  # Red pública: solo la API, Prometheus y Grafana publican puertos.
+  frontend: {}
+  # Red privada: PostgreSQL y Redis no son accesibles desde fuera de Docker.
+  backend:
+    internal: true
+
+volumes:
+  pgdata: {}
+  prometheus-data: {}
+  grafana-data: {}

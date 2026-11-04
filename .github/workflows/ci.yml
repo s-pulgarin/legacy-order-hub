@@ -1,4 +1,4 @@
-# Integración continua (RNF-04.1, RNF-04.2, RNF-02.3, RNF-01.2, RNF-01.3).
+# Integración continua (RNF-04.1, RNF-04.2, RNF-02.3, RNF-01.2, RNF-01.3, RNF-03.1).
 # Se ejecuta en cada push y en cada Pull Request hacia main. Si cualquier
 # paso falla, el check queda en rojo y el PR no debería mezclarse.
 name: CI
@@ -51,12 +51,30 @@ jobs:
         run: pip-audit -r requirements.txt --progress-spinner off
 
   tests:
-    name: Pruebas y cobertura (Python ${{ matrix.python-version }})
+    name: Pruebas y cobertura (Python ${{ matrix.python-version }}, SQLite + PostgreSQL)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.14"]
+    # PostgreSQL real para que las pruebas de integración corran contra los dos
+    # adaptadores de persistencia (SQLite y PostgreSQL).
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: orderhub
+          POSTGRES_PASSWORD: orderhub_ci
+          POSTGRES_DB: orderhub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orderhub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://orderhub:orderhub_ci@localhost:5432/orderhub_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -74,3 +92,28 @@ jobs:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
+
+  docker:
+    name: Imagen Docker (build + prueba de humo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Construir la imagen (multi-stage)
+        run: docker build -t orderhub:ci .
+      - name: La imagen no corre como root
+        run: test "$(docker run --rm --entrypoint id orderhub:ci -u)" != "0"
+      - name: Prueba de humo (/healthcheck con gunicorn)
+        run: |
+          docker run -d --name orderhub -p 8000:8000             -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"             orderhub:ci
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/healthcheck && exit 0
+            sleep 1
+          done
+          docker logs orderhub
+          exit 1
+      - name: Validar docker-compose.yml
+        env:
+          POSTGRES_PASSWORD: ci
+          GRAFANA_ADMIN_PASSWORD: ci
+        run: touch .env && docker compose config --quiet
+

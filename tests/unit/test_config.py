@@ -92,6 +92,30 @@ def test_configuracion_de_logs_invalida(variable, value):
         load_settings({"SECRET_KEY": VALID_KEY, variable: value})
 
 
+def test_urls_de_postgres_y_redis():
+    settings = load_settings(
+        {
+            "SECRET_KEY": VALID_KEY,
+            "DATABASE_URL": "postgresql://u:p@db:5432/orderhub",
+            "REDIS_URL": "redis://redis:6379/0",
+        }
+    )
+    default = load_settings({"SECRET_KEY": VALID_KEY})
+
+    assert settings.database_url == "postgresql://u:p@db:5432/orderhub"
+    assert settings.redis_url == "redis://redis:6379/0"
+    assert (default.database_url, default.redis_url) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "variable, value",
+    [("DATABASE_URL", "mysql://u:p@db/x"), ("REDIS_URL", "http://redis:6379")],
+)
+def test_urls_con_esquema_invalido(variable, value):
+    with pytest.raises(ConfigError):
+        load_settings({"SECRET_KEY": VALID_KEY, variable: value})
+
+
 def test_lee_el_archivo_env(tmp_path, monkeypatch):
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.delenv("JWT_EXPIRES_MINUTES", raising=False)

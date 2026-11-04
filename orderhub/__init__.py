@@ -4,6 +4,7 @@ from flask import Flask
 
 from orderhub.adapters.inbound.web import (
     auth_routes,
+    health_routes,
     home_routes,
     metrics_routes,
     order_routes,
@@ -32,6 +33,7 @@ def create_app(container: Container, secret_key: str) -> Flask:
     app.register_blueprint(order_routes.bp)
     app.register_blueprint(product_routes.bp)
     app.register_blueprint(metrics_routes.bp)
+    app.register_blueprint(health_routes.bp)
     register_error_handlers(app)
     register_request_observability(app, container.metrics)
     return app

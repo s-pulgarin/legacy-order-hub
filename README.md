@@ -117,3 +117,17 @@ A continuación se resumen las áreas más críticas identificadas en el sistema
    python app.py
    python -m pytest
    ```
+
+### Entorno completo con Docker (recomendado)
+
+Requiere Docker Desktop. Con el `.env` configurado (incluye `POSTGRES_PASSWORD` y `GRAFANA_ADMIN_PASSWORD`):
+
+```bash
+docker compose up -d --build
+```
+
+- API: http://localhost:8000 (panel de pruebas en `/`)
+- Grafana: http://localhost:3000 (usuario `admin`, dashboard "OrderHub - Métricas RED")
+- Prometheus: http://localhost:9090
+
+Levanta la API (gunicorn), el worker de notificaciones, PostgreSQL, Redis, Prometheus y Grafana. Ver `docs/ARCHITECTURE.md` §14.

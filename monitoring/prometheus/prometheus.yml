@@ -1,0 +1,10 @@
+# Prometheus: recolecta las métricas de la API cada 5 segundos (RNF-05.2).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: orderhub-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]

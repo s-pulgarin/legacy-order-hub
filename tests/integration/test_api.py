@@ -1,14 +1,18 @@
-"""Pruebas de extremo a extremo: Flask + servicios + SQLite real en archivo temporal."""
+"""Pruebas de extremo a extremo: Flask + servicios + base real.
+
+Cada prueba corre contra SQLite y, con TEST_DATABASE_URL, contra PostgreSQL
+(ver `conftest.py`).
+"""
 
 import io
 import json
 import logging
-import sqlite3
+
+import fakeredis
 
 import pytest
 
 from orderhub import create_app
-from orderhub.container import build_container
 from orderhub.observability.logging_config import configure_logging
 
 SECRET = "clave-de-pruebas-de-al-menos-32-bytes!!"
@@ -16,16 +20,8 @@ SEED_USERS = [("admin", "admin123", "admin"), ("juan", "123456", "client")]
 
 
 @pytest.fixture
-def db_path(tmp_path):
-    return str(tmp_path / "test_orderhub.db")
-
-
-@pytest.fixture
-def client(db_path):
-    app = create_app(
-        container=build_container(db_path, SECRET, seed_users=SEED_USERS),
-        secret_key=SECRET,
-    )
+def client(backend):
+    app = create_app(container=backend.build(SECRET, SEED_USERS), secret_key=SECRET)
     app.config["TESTING"] = True
     return app.test_client()
 
@@ -44,15 +40,6 @@ def admin_headers(client):
 @pytest.fixture
 def client_headers(client):
     return _login(client, "juan", "123456")
-
-
-def _stock(db_path, product_id):
-    conn = sqlite3.connect(db_path)
-    stock = conn.execute(
-        "SELECT stock FROM products WHERE id = ?", (product_id,)
-    ).fetchone()[0]
-    conn.close()
-    return stock
 
 
 def test_index_renders(client):
@@ -90,40 +77,21 @@ def test_login_sql_injection_is_rejected(client):
     assert response.status_code == 401
 
 
-def test_seed_passwords_are_stored_hashed(db_path, client):
-    conn = sqlite3.connect(db_path)
-    passwords = [row[0] for row in conn.execute("SELECT password FROM users")]
-    conn.close()
+def test_seed_passwords_are_stored_hashed(backend, client):
+    passwords = backend.passwords()
     assert passwords and all(p.startswith("$argon2id$") for p in passwords)
 
 
-def test_legacy_plaintext_passwords_are_migrated(db_path):
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " username TEXT, password TEXT, role TEXT)"
-    )
-    conn.execute(
-        "INSERT INTO users (username, password, role)"
-        " VALUES ('admin', 'admin123', 'admin')"
-    )
-    conn.commit()
-    conn.close()
+def test_legacy_plaintext_passwords_are_migrated(backend):
+    backend.create_legacy_user("admin", "admin123", "admin")
 
-    app = create_app(
-        container=build_container(db_path, SECRET, seed_users=SEED_USERS),
-        secret_key=SECRET,
-    )
+    app = create_app(container=backend.build(SECRET, SEED_USERS), secret_key=SECRET)
     response = app.test_client().post(
         "/login", json={"username": "admin", "password": "admin123"}
     )
 
     assert response.status_code == 200
-    conn = sqlite3.connect(db_path)
-    stored = conn.execute(
-        "SELECT password FROM users WHERE username = 'admin'"
-    ).fetchone()[0]
-    conn.close()
+    [stored] = backend.passwords()
     assert stored.startswith("$argon2id$")
 
 
@@ -164,13 +132,13 @@ def test_register_short_password_returns_400(client):
         {"Authorization": "Bearer token.falso.123"},
     ],
 )
-def test_create_order_without_valid_token_returns_401(client, db_path, headers):
+def test_create_order_without_valid_token_returns_401(client, backend, headers):
     response = client.post(
         "/create_order", json={"product_id": 1, "quantity": 1}, headers=headers
     )
     assert response.status_code == 401
     assert response.get_json()["status"] == "error"
-    assert _stock(db_path, 1) == 5
+    assert backend.stock(1) == 5
 
 
 def test_create_order_uses_user_from_token(client, admin_headers, client_headers):
@@ -193,15 +161,15 @@ def test_create_order_uses_user_from_token(client, admin_headers, client_headers
 # --- Órdenes (paridad funcional con el legado) -----------------------------
 
 
-def test_create_order_persists_and_decreases_stock(client, db_path, client_headers):
+def test_create_order_persists_and_decreases_stock(client, backend, client_headers):
     response = client.post(
         "/create_order", json={"product_id": 2, "quantity": 4}, headers=client_headers
     )
     assert response.status_code == 201
-    assert _stock(db_path, 2) == 46
+    assert backend.stock(2) == 46
 
 
-def test_create_order_insufficient_stock_returns_400(client, db_path, client_headers):
+def test_create_order_insufficient_stock_returns_400(client, backend, client_headers):
     response = client.post(
         "/create_order",
         json={"product_id": 1, "quantity": 99},
@@ -209,7 +177,7 @@ def test_create_order_insufficient_stock_returns_400(client, db_path, client_hea
     )
     assert response.status_code == 400
     assert response.get_json() == {"error": "Stock insuficiente"}
-    assert _stock(db_path, 1) == 5
+    assert backend.stock(1) == 5
 
 
 def test_create_order_unknown_product_returns_404(client, client_headers):
@@ -248,7 +216,7 @@ def test_admin_can_create_product(client, admin_headers):
     }
 
 
-def test_client_cannot_create_product_returns_403(client, db_path, client_headers):
+def test_client_cannot_create_product_returns_403(client, backend, client_headers):
     response = client.post(
         "/products",
         json={"name": "Teclado", "price": 45.0, "stock": 10},
@@ -259,9 +227,7 @@ def test_client_cannot_create_product_returns_403(client, db_path, client_header
         "status": "error",
         "message": "Acceso denegado: se requiere rol admin",
     }
-    conn = sqlite3.connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 2
-    conn.close()
+    assert backend.count_products() == 2
 
 
 def test_create_product_without_token_returns_401(client):
@@ -316,32 +282,29 @@ def test_list_products_is_public_and_shows_current_stock(client, client_headers)
 
 
 def test_failure_while_saving_order_rolls_back_stock(
-    client, db_path, client_headers, monkeypatch
+    client, backend, client_headers, monkeypatch
 ):
     """Si falla el INSERT de la orden después de descontar stock, se hace rollback."""
-    from orderhub.adapters.outbound.persistence.sqlite import order_repository
 
     def failing_add(self, order):
         raise RuntimeError("fallo simulado de la base de datos")
 
-    monkeypatch.setattr(order_repository.SqliteOrderRepository, "add", failing_add)
+    monkeypatch.setattr(backend.order_repository_class, "add", failing_add)
 
     response = client.post(
         "/create_order", json={"product_id": 1, "quantity": 2}, headers=client_headers
     )
 
     assert response.status_code == 500
-    assert _stock(db_path, 1) == 5
-    conn = sqlite3.connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
-    conn.close()
+    assert backend.stock(1) == 5
+    assert backend.count_orders() == 0
 
 
 # --- Inyección SQL en todos los puntos de entrada (RNF-02.2) -------------------
 
 
 def test_sql_injection_payloads_are_stored_as_plain_data(
-    client, db_path, admin_headers
+    client, backend, admin_headers
 ):
     payload = "x'); DROP TABLE users; --"
 
@@ -358,9 +321,7 @@ def test_sql_injection_payloads_are_stored_as_plain_data(
     assert register.get_json()["user"]["username"] == payload
     assert product.status_code == 201
     assert client.get("/products").get_json()[-1]["name"] == payload
-    conn = sqlite3.connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 3
-    conn.close()
+    assert backend.count_users() == 3
     _login(client, payload, "secreta123")
 
 
@@ -474,3 +435,53 @@ def test_metric_labels_use_route_templates_not_raw_urls(client):
     assert _metric(client, "orderhub_http_requests_total", unmatched) == 2
     scraped = {"method": "GET", "endpoint": "/metrics", "status": "200"}
     assert _metric(client, "orderhub_http_requests_total", scraped) == 0
+
+
+# --- Notificación asíncrona por Redis (RF-04.1) ----------------------------------
+
+
+def test_created_order_is_queued_for_the_worker(backend):
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    container = backend.build(SECRET, SEED_USERS, redis_client=redis_client)
+    client = create_app(container=container, secret_key=SECRET).test_client()
+    headers = _login(client, "juan", "123456")
+
+    response = client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=headers
+    )
+    client.post(
+        "/create_order", json={"product_id": 1, "quantity": 99}, headers=headers
+    )
+
+    [raw] = redis_client.lrange("orderhub:order_events", 0, -1)
+    assert json.loads(raw)["order_id"] == response.get_json()["order_id"]
+
+
+def test_order_succeeds_even_if_redis_is_down(backend):
+    class DownRedis:
+        def lpush(self, *args):
+            raise ConnectionError("Redis no responde")
+
+    container = backend.build(SECRET, SEED_USERS, redis_client=DownRedis())
+    client = create_app(container=container, secret_key=SECRET).test_client()
+    headers = _login(client, "juan", "123456")
+
+    response = client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=headers
+    )
+
+    assert response.status_code == 201
+    assert backend.stock(2) == 49
+
+
+# --- Salud (sondas de Docker, Kubernetes y Azure) ---------------------------------
+
+
+def test_healthcheck_is_ok_and_does_not_pollute_metrics_or_logs(client, json_logs):
+    response = client.get("/healthcheck")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ok"}
+    probe = {"method": "GET", "endpoint": "/healthcheck", "status": "200"}
+    assert _metric(client, "orderhub_http_requests_total", probe) == 0
+    assert [r for r in json_logs() if r["logger"] == "orderhub.http"] == []

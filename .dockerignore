@@ -1,0 +1,19 @@
+# Solo el código de la app entra al contexto de build: nada de secretos ni datos locales.
+.git
+.github
+.env
+.env.*
+!.env.example
+venv/
+__pycache__/
+*.pyc
+*.db
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+tests/
+docs/
+monitoring/
+ESTADO.md
+database.py

@@ -43,6 +43,8 @@ OrderHub es una API Flask que gestiona usuarios, catálogo de productos y órden
 | `GET /get_all_orders_legacy` | `@admin_required` | Lista las órdenes de todos los usuarios |
 | `GET /products` | Pública | Lista los productos con su precio y stock actual (RF-02.1) |
 | `POST /products` | `@admin_required` | Crea un producto (operación administrativa) |
+| `GET /metrics` | Pública | Métricas Prometheus (sección 13) |
+| `GET /healthcheck` | Pública | Sonda de salud para Docker, Kubernetes y Azure (sección 14) |
 
 ## 2. Regla de dependencias
 
@@ -110,6 +112,10 @@ orderhub/
         │   └── jwt_token_service.py  # JWTTokenService
         └── notifications/       # ConsoleOrderNotifier, MetricsOrderNotifier, CompositeOrderNotifier
 orderhub/observability/         # infraestructura transversal: logging_config.py (JSON), metrics.py (Prometheus)
+orderhub/adapters/outbound/persistence/postgres/  # adaptador PostgreSQL (psycopg): repositorios + UoW + esquema
+orderhub/adapters/outbound/notifications/redis_notifier.py  # encola eventos en Redis
+orderhub/adapters/inbound/queue/order_events_worker.py      # consume la cola (adaptador de entrada)
+worker.py · gunicorn.conf.py · Dockerfile · docker-compose.yml · monitoring/ (Prometheus + Grafana)
 tests/
 ├── unit/                        # servicios con fakes en memoria + adaptadores Argon2/JWT reales
 └── integration/                 # API completa con SQLite temporal
@@ -340,6 +346,9 @@ curl -s -X POST localhost:5000/products -H "Authorization: Bearer <token>" -H "C
 | `SEED_ADMIN_PASSWORD` / `SEED_CLIENT_PASSWORD` | No | vacío | Contraseñas de `admin` y `juan`, solo si la tabla `users` está vacía. Vacías → no se crean. |
 | `LOG_LEVEL` | No | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL`. |
 | `LOG_FORMAT` | No | `json` | `json` (producción y contenedores) o `text` (lectura local). |
+| `DATABASE_URL` | No | vacío | `postgresql://...`: usa el adaptador PostgreSQL; vacío → SQLite en `DATABASE_PATH`. En compose la arma el propio compose. |
+| `REDIS_URL` | No (sí para el worker) | vacío | `redis://...`: encola las notificaciones de órdenes (RF-04.1). |
+| `POSTGRES_PASSWORD` / `GRAFANA_ADMIN_PASSWORD` | Para compose | — | Contraseña de PostgreSQL y del admin de Grafana en docker-compose. |
 
 ```mermaid
 flowchart LR
@@ -492,3 +501,101 @@ flowchart LR
 | `MetricsOrderNotifier` | Cuenta las órdenes confirmadas. |
 | `CompositeOrderNotifier` | Reenvía el evento a varios notificadores y aísla sus fallos. |
 | `Settings.log_level` / `Settings.log_json` | Desde `LOG_LEVEL` y `LOG_FORMAT`. |
+
+## 14. Contenedores: PostgreSQL, Redis, Docker y docker-compose (RNF-03.1, RNF-03.2, RF-04.1, RNF-05.3)
+
+### 14.1 Entorno completo con docker-compose
+
+```mermaid
+flowchart LR
+    U[Navegador / cliente] -- ":8000" --> API
+    U -- ":3000" --> GRAF[grafana]
+    U -- ":9090" --> PROM[prometheus]
+    subgraph frontend [red frontend]
+        API["api<br/>gunicorn + Flask"]
+        PROM
+        GRAF
+    end
+    subgraph backend [red backend · internal]
+        DB[("db<br/>postgres:17")]
+        R[("redis:7.4")]
+        W["worker<br/>python worker.py"]
+    end
+    API -- SQL --> DB
+    API -- "LPUSH evento" --> R
+    W -- "BRPOP" --> R
+    PROM -- "scrape /metrics cada 5 s" --> API
+    GRAF -- PromQL --> PROM
+```
+
+| Servicio | Imagen | Rol | Expuesto |
+| :--- | :--- | :--- | :--- |
+| `api` | `orderhub:local` (Dockerfile) | API Flask servida por gunicorn | `:8000` |
+| `worker` | `orderhub:local` | Consume la cola de eventos de órdenes | No |
+| `db` | `postgres:17-alpine` | Base de datos (volumen `pgdata`) | No (red interna) |
+| `redis` | `redis:7.4-alpine` | Cola de notificaciones | No (red interna) |
+| `prometheus` | `prom/prometheus:v3.5.0` | Recolecta `/metrics` | `:9090` |
+| `grafana` | `grafana/grafana:12.1.1` | Dashboard RED aprovisionado | `:3000` |
+
+- La red `backend` es `internal`: PostgreSQL y Redis **no se pueden alcanzar desde fuera de Docker**.
+- Todos los secretos salen de `.env` (`POSTGRES_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, `SECRET_KEY`, `SEED_*`). Si falta uno obligatorio, `docker compose` se niega a arrancar.
+- Healthchecks: `pg_isready`, `redis-cli ping` y `/healthcheck` (en el `Dockerfile`). La API arranca solo cuando la base y Redis están sanos.
+
+```bash
+docker compose up -d --build      # API http://localhost:8000 · Grafana http://localhost:3000
+docker compose logs -f api worker  # logs JSON
+docker compose down                # los datos de PostgreSQL quedan en el volumen pgdata
+```
+
+### 14.2 Dockerfile multi-stage (RNF-03.1)
+
+1. **builder** (`python:3.12-slim`): crea `/opt/venv` e instala **solo** `requirements.txt` (sin pytest, black, etc.).
+2. **runtime** (`python:3.12-slim`): copia el entorno virtual y el código (`app.py`, `worker.py`, `config.py`, `gunicorn.conf.py`, `orderhub/`). Corre como el usuario sin privilegios `app` (uid 999), expone `8000`, tiene `HEALTHCHECK` y arranca con `gunicorn --config gunicorn.conf.py app:app`.
+
+- **Tamaño:** 288 MB. `.dockerignore` deja fuera `.env`, `venv/`, bases locales, pruebas y documentación.
+- **gunicorn:** 1 proceso con 4 hilos por contenedor (las métricas de Prometheus quedan coherentes). Se escala con réplicas, sin access log duplicado (la app ya registra cada petición en JSON).
+
+### 14.3 Adaptador PostgreSQL
+
+`container._persistence()` elige el adaptador: con `DATABASE_URL` usa `PostgresUnitOfWork` y sus repositorios (psycopg 3, `%s` binding, `RETURNING id`); sin ella, SQLite. **Dominio y casos de uso no cambiaron una sola línea**: es la ventaja de los puertos.
+
+El esquema PostgreSQL agrega la integridad que el legado no tenía (TD-14): `username UNIQUE`, claves foráneas `orders → users/products` y `CHECK` de `stock >= 0`, `price > 0`, `quantity > 0` y del rol.
+
+Las 42 pruebas de integración corren contra **los dos motores** (`tests/integration/conftest.py`). En el CI, PostgreSQL es un contenedor de servicio.
+
+### 14.4 Notificación asíncrona con Redis (RF-04.1)
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant A as API (OrderService)
+    participant N as CompositeOrderNotifier
+    participant R as Redis
+    participant W as worker
+
+    C->>A: POST /create_order
+    A->>A: transacción: stock + orden + commit
+    A->>N: order_created(order)
+    N->>R: LPUSH orderhub:order_events {evento JSON} (~1 ms)
+    A-->>C: 201 (no espera el correo)
+    W->>R: BRPOP orderhub:order_events
+    R-->>W: evento
+    W->>W: send_confirmation_email(evento) (simulado, log JSON)
+    Note over W,R: si el handler falla → LPUSH orderhub:order_events:failed
+```
+
+- **No bloquea:** la respuesta solo espera un `LPUSH`. Si Redis no está disponible, el `CompositeOrderNotifier` registra el error y la orden igual responde 201 (está probado).
+- **Worker robusto:** los mensajes inválidos se descartan con un log, los que fallan van a la cola `:failed` y los cortes de conexión con Redis se reintentan sin tumbar el proceso.
+- **Error encontrado al probar en Docker:** el worker se reiniciaba porque redis-py cortaba el socket durante el `BRPOP`. Se corrigió con un `socket_timeout` mayor que la espera y reintentos (commit dedicado).
+
+### 14.5 Grafana (RNF-05.3)
+
+El dashboard **"OrderHub - Métricas RED"** (`monitoring/grafana/dashboards/orderhub-red.json`) se aprovisiona solo y es la página de inicio de Grafana:
+- **Indicadores:** tasa de peticiones, % de errores 5xx, latencia p95 y órdenes creadas.
+- **Series:** tasa por endpoint, 4xx/5xx por código, latencia p50/p95/p99, p95 por endpoint, peticiones en curso y órdenes por minuto.
+
+Entrar en http://localhost:3000 con el usuario `admin` y la contraseña `GRAFANA_ADMIN_PASSWORD` del `.env`.
+
+### 14.6 CI
+
+El job `docker` construye la imagen, verifica que no corre como root, hace una prueba de humo de `/healthcheck` bajo gunicorn y valida `docker-compose.yml` (RNF-04.2). El job `tests` corre contra SQLite y PostgreSQL.
