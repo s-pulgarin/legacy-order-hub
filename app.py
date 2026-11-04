@@ -14,6 +14,7 @@ app = create_app(
         settings.secret_key,
         token_expires_minutes=settings.jwt_expires_minutes,
         seed_users=settings.seed_users,
+        database_url=settings.database_url,
     ),
     secret_key=settings.secret_key,
 )

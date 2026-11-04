@@ -33,6 +33,7 @@ class Settings:
 
     secret_key: str
     database_path: str = "orderhub.db"
+    database_url: Optional[str] = None
     jwt_expires_minutes: int = 30
     debug: bool = False
     host: str = "127.0.0.1"
@@ -66,6 +67,7 @@ def load_settings(
     return Settings(
         secret_key=secret_key,
         database_path=environ.get("DATABASE_PATH", "").strip() or "orderhub.db",
+        database_url=_database_url(environ),
         jwt_expires_minutes=_int(environ, "JWT_EXPIRES_MINUTES", 30),
         debug=_bool(environ, "FLASK_DEBUG", False),
         host=environ.get("FLASK_HOST", "").strip() or "127.0.0.1",
@@ -137,3 +139,13 @@ def _log_format(environ: Mapping[str, str]) -> str:
     if value not in {"json", "text"}:
         raise ConfigError("LOG_FORMAT debe ser json o text")
     return value
+
+
+def _database_url(environ: Mapping[str, str]) -> Optional[str]:
+    """URL de PostgreSQL (`DATABASE_URL`); sin ella se usa SQLite en DATABASE_PATH."""
+    url = environ.get("DATABASE_URL", "").strip()
+    if not url:
+        return None
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise ConfigError("DATABASE_URL debe empezar por postgresql://")
+    return url
