@@ -1,11 +1,15 @@
 """Pruebas de extremo a extremo: Flask + servicios + SQLite real en archivo temporal."""
 
+import io
+import json
+import logging
 import sqlite3
 
 import pytest
 
 from orderhub import create_app
 from orderhub.container import build_container
+from orderhub.observability.logging_config import configure_logging
 
 SECRET = "clave-de-pruebas-de-al-menos-32-bytes!!"
 SEED_USERS = [("admin", "admin123", "admin"), ("juan", "123456", "client")]
@@ -363,3 +367,54 @@ def test_sql_injection_payloads_are_stored_as_plain_data(
 def test_unknown_route_keeps_flask_404(client):
     response = client.get("/no-existe")
     assert response.status_code == 404
+
+
+# --- Observabilidad: logs por petición (RNF-05.1) ------------------------------
+
+
+@pytest.fixture
+def json_logs():
+    """Captura la salida real del logger raíz configurado en JSON."""
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    stream = io.StringIO()
+    configure_logging("INFO", json_format=True, stream=stream)
+    yield lambda: [json.loads(line) for line in stream.getvalue().splitlines()]
+    root.handlers, root.level = handlers, level
+
+
+def test_each_request_is_logged_as_json_with_context(client, client_headers, json_logs):
+    response = client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=client_headers
+    )
+
+    logs = json_logs()
+    [http] = [r for r in logs if r["logger"] == "orderhub.http"]
+    [order] = [r for r in logs if r.get("event") == "order_created"]
+    assert http["level"] == "INFO"
+    assert (http["method"], http["endpoint"], http["status"]) == (
+        "POST",
+        "/create_order",
+        201,
+    )
+    assert http["duration_ms"] >= 0
+    assert http["request_id"] == response.headers["X-Request-ID"]
+    assert http["user_id"] == 2
+    assert order["request_id"] == http["request_id"]
+    assert (order["order_id"], order["total"]) == (1, 15.5)
+
+
+def test_client_errors_are_logged_as_warning(client, json_logs):
+    client.post("/create_order", json={"product_id": 1})
+    [http] = [r for r in json_logs() if r["logger"] == "orderhub.http"]
+    assert (http["level"], http["status"]) == ("WARNING", 401)
+
+
+def test_valid_incoming_request_id_is_reused_and_unsafe_one_replaced(client):
+    unsafe = "<script>alert(1)</script>"
+    reused = client.get("/products", headers={"X-Request-ID": "trace-123"})
+    replaced = client.get("/products", headers={"X-Request-ID": unsafe})
+
+    assert reused.headers["X-Request-ID"] == "trace-123"
+    assert replaced.headers["X-Request-ID"] != unsafe
+    assert len(replaced.headers["X-Request-ID"]) == 32

@@ -13,6 +13,7 @@ from typing import Mapping, Optional, Tuple
 from dotenv import load_dotenv
 
 MIN_SECRET_KEY_LENGTH = 32
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 # Valores que nunca deben usarse como clave: el secreto legado que quedó
 # publicado en el historial de Git y el marcador de posición de .env.example.
@@ -37,6 +38,8 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 5000
     seed_users: Tuple[Tuple[str, str, str], ...] = field(default_factory=tuple)
+    log_level: str = "INFO"
+    log_json: bool = True
 
 
 def load_settings(
@@ -68,6 +71,8 @@ def load_settings(
         host=environ.get("FLASK_HOST", "").strip() or "127.0.0.1",
         port=_int(environ, "FLASK_PORT", 5000),
         seed_users=_seed_users(environ),
+        log_level=_log_level(environ),
+        log_json=_log_format(environ) == "json",
     )
 
 
@@ -116,3 +121,19 @@ def _seed_users(environ: Mapping[str, str]) -> Tuple[Tuple[str, str, str], ...]:
         if password:
             seeds.append((username, password, role))
     return tuple(seeds)
+
+
+def _log_level(environ: Mapping[str, str]) -> str:
+    """Nivel de log (`LOG_LEVEL`): DEBUG, INFO, WARNING, ERROR o CRITICAL."""
+    level = environ.get("LOG_LEVEL", "").strip().upper() or "INFO"
+    if level not in LOG_LEVELS:
+        raise ConfigError(f"LOG_LEVEL debe ser uno de {', '.join(LOG_LEVELS)}")
+    return level
+
+
+def _log_format(environ: Mapping[str, str]) -> str:
+    """Formato de log (`LOG_FORMAT`): `json` (por defecto) o `text`."""
+    value = environ.get("LOG_FORMAT", "").strip().lower() or "json"
+    if value not in {"json", "text"}:
+        raise ConfigError("LOG_FORMAT debe ser json o text")
+    return value

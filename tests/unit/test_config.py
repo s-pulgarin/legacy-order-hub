@@ -74,6 +74,24 @@ def test_formatos_invalidos_lanzan_config_error(variable, value):
         load_settings({"SECRET_KEY": VALID_KEY, variable: value})
 
 
+def test_configuracion_de_logs():
+    default = load_settings({"SECRET_KEY": VALID_KEY})
+    custom = load_settings(
+        {"SECRET_KEY": VALID_KEY, "LOG_LEVEL": "debug", "LOG_FORMAT": "TEXT"}
+    )
+
+    assert (default.log_level, default.log_json) == ("INFO", True)
+    assert (custom.log_level, custom.log_json) == ("DEBUG", False)
+
+
+@pytest.mark.parametrize(
+    "variable, value", [("LOG_LEVEL", "VERBOSE"), ("LOG_FORMAT", "xml")]
+)
+def test_configuracion_de_logs_invalida(variable, value):
+    with pytest.raises(ConfigError):
+        load_settings({"SECRET_KEY": VALID_KEY, variable: value})
+
+
 def test_lee_el_archivo_env(tmp_path, monkeypatch):
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.delenv("JWT_EXPIRES_MINUTES", raising=False)
