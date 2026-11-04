@@ -1,0 +1,16 @@
+# Configuración NO sensible (RNF-03.3). Los secretos van en el Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orderhub-config
+  namespace: orderhub
+  labels:
+    app.kubernetes.io/part-of: orderhub
+data:
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  JWT_EXPIRES_MINUTES: "30"
+  REDIS_URL: "redis://redis:6379/0"
+  GUNICORN_THREADS: "4"
+  POSTGRES_USER: "orderhub"
+  POSTGRES_DB: "orderhub"

@@ -11,3 +11,6 @@ __pycache__
 .coverage
 coverage.xml
 htmlcov/
+
+# Secret real de Kubernetes (se genera desde .env)
+k8s/secret.yaml

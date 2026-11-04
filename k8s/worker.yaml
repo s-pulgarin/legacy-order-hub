@@ -1,0 +1,40 @@
+# Worker de notificaciones (RF-04.1): consume la cola de Redis.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: orderhub
+  labels:
+    app.kubernetes.io/name: orderhub-worker
+    app.kubernetes.io/part-of: orderhub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orderhub-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orderhub-worker
+        app.kubernetes.io/part-of: orderhub
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: worker
+          image: orderhub:local
+          imagePullPolicy: IfNotPresent
+          command: ["python", "worker.py"]
+          envFrom:
+            - configMapRef: { name: orderhub-config }
+            - secretRef: { name: orderhub-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { cpu: 250m, memory: 192Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }

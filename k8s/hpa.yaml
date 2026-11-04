@@ -1,0 +1,29 @@
+# Autoescalado horizontal de la API (RNF-03.4, HU-07):
+# entre 2 y 5 réplicas, apuntando al 70 % de CPU (sobre el request de 100m).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: orderhub
+  labels:
+    app.kubernetes.io/name: orderhub-api
+    app.kubernetes.io/part-of: orderhub
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # sube rápido ante picos
+    scaleDown:
+      stabilizationWindowSeconds: 120 # baja con calma para no oscilar
