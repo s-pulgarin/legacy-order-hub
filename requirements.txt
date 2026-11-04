@@ -8,3 +8,4 @@ python-dotenv==1.2.4
 python-json-logger==4.2.0
 redis==8.1.0
 prometheus-client==0.26.0
+gunicorn==26.2.0

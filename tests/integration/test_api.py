@@ -472,3 +472,16 @@ def test_order_succeeds_even_if_redis_is_down(backend):
 
     assert response.status_code == 201
     assert backend.stock(2) == 49
+
+
+# --- Salud (sondas de Docker, Kubernetes y Azure) ---------------------------------
+
+
+def test_healthcheck_is_ok_and_does_not_pollute_metrics_or_logs(client, json_logs):
+    response = client.get("/healthcheck")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ok"}
+    probe = {"method": "GET", "endpoint": "/healthcheck", "status": "200"}
+    assert _metric(client, "orderhub_http_requests_total", probe) == 0
+    assert [r for r in json_logs() if r["logger"] == "orderhub.http"] == []

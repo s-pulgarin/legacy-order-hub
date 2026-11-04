@@ -17,8 +17,9 @@ logger = logging.getLogger("orderhub.http")
 # Solo se acepta un X-Request-ID entrante "limpio" (evita inyectar texto en los logs).
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UNMATCHED_ENDPOINT = "<sin_ruta>"
-# /metrics no se mide a sí misma: Prometheus la consulta cada pocos segundos.
-UNMEASURED_ENDPOINTS = {"/metrics"}
+# Rutas de infraestructura que se consultan cada pocos segundos (Prometheus y las
+# sondas de salud): no alimentan las métricas RED y se registran solo en DEBUG.
+UNMEASURED_ENDPOINTS = {"/metrics", "/healthcheck"}
 
 
 def _request_id() -> str:
@@ -68,8 +69,9 @@ def register_request_observability(app: Flask, metrics: Optional[Metrics] = None
             metrics.observe_request(
                 request.method, endpoint_label(), response.status_code, elapsed
             )
+        quiet = endpoint_label() in UNMEASURED_ENDPOINTS
         logger.log(
-            _log_level(response.status_code),
+            logging.DEBUG if quiet else _log_level(response.status_code),
             "Petición HTTP atendida",
             extra={
                 "method": request.method,
