@@ -249,6 +249,9 @@ Los requisitos de las secciones 2 y 3 no cambian. Esta sección registra cómo y
 | RNF-02.3 SAST en el flujo | ✅ | Job `security` del CI: Bandit (falla con severidad media o alta) y pip-audit |
 | RNF-04.1 Pipeline en cada PR | ✅ | `.github/workflows/ci.yml` (push y pull_request a `main`) |
 | RNF-04.2 Pruebas, análisis y build de imagen en CI | 🟡 | Pruebas y análisis estático listos; el build de la imagen llega con el `Dockerfile` |
+| RNF-05.1 Logs JSON | ✅ | `configure_logging` (python-json-logger): timestamp, nivel y contexto (`request_id`, `user_id`, datos de la petición) |
+| RNF-05.2 Endpoint `/metrics` | ✅ | `prometheus_client`: métricas RED + `orderhub_orders_created_total` |
+| RNF-05.3 Dashboard Grafana | ⏳ | Llega con docker-compose (Prometheus + Grafana); las consultas PromQL están en `ARCHITECTURE.md` §13.2 |
 
 ### 5.1 Uso de variables de entorno (RNF-02.1)
 

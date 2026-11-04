@@ -198,7 +198,7 @@
 | **Ubicación** | `app.py:26`, `app.py:69` |
 | **Descripción** | Sin niveles, marcas de tiempo ni contexto; imposible de agregar o consultar. |
 | **Requisito** | RNF-05.1, HU-08 |
-| **Esfuerzo / Estado** | S · **Parcial en PR #1** (`logging` estándar; falta el formato JSON) |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (entrega de observabilidad)**: logs JSON a stdout con timestamp UTC, nivel, `request_id`, `user_id` y datos de cada petición; además, métricas Prometheus en `/metrics` (RNF-05.1, RNF-05.2). |
 
 ### 🟡 TD-16 · Efectos laterales al importar y configuración rígida
 | Campo | Detalle |
@@ -295,3 +295,4 @@ Queda **1 hallazgo Low, falso positivo**: B105 en `auth_routes.py` por la cadena
 | 2026-10-19 | Segunda entrega: TD-03 y TD-06 resueltos; TD-10 actualizado. |
 | 2026-10-19 | Tercera entrega: TD-01 (SQLi) y TD-02 (secretos) resueltos, junto con TD-04 y TD-16; TD-10 y TD-18 actualizados; nuevo análisis con Bandit (4.4). |
 | 2026-11-04 | Entrega CI: TD-10 (cobertura 99,8 %) y TD-11 (dependencias vulnerables) resueltos; Bandit y pip-audit integrados en GitHub Actions. |
+| 2026-11-04 | Entrega de observabilidad: TD-15 (logging con `print`) resuelto con logs JSON y métricas Prometheus. |

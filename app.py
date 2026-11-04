@@ -3,8 +3,10 @@
 import config
 from orderhub import create_app
 from orderhub.container import build_container
+from orderhub.observability.logging_config import configure_logging
 
 settings = config.load_settings()
+configure_logging(settings.log_level, json_format=settings.log_json)
 
 app = create_app(
     container=build_container(

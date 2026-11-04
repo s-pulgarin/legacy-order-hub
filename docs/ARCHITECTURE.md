@@ -108,7 +108,8 @@ orderhub/
         ├── security/
         │   ├── argon2_hasher.py      # Argon2PasswordHasher
         │   └── jwt_token_service.py  # JWTTokenService
-        └── notifications/       # ConsoleOrderNotifier
+        └── notifications/       # ConsoleOrderNotifier, MetricsOrderNotifier, CompositeOrderNotifier
+orderhub/observability/         # infraestructura transversal: logging_config.py (JSON), metrics.py (Prometheus)
 tests/
 ├── unit/                        # servicios con fakes en memoria + adaptadores Argon2/JWT reales
 └── integration/                 # API completa con SQLite temporal
@@ -127,6 +128,7 @@ tests/
 | **Unit of Work** | `UnitOfWork` / `SqliteUnitOfWork` | Una conexión y una transacción por caso de uso: `register`, `create_order` y `create_product` confirman con `commit()` o se deshacen solos. En `create_order` garantiza que el stock solo baja si la orden se guarda (sección 12). |
 | **Repository** | `UserRepository` (`get_by_username`, `add`), `ProductRepository` (`get`, `add`, `update_stock`), `OrderRepository` | Ocultan el SQL parametrizado detrás de operaciones de dominio. |
 | **Application Factory** | `create_app()` | Crear la app con distintas configuraciones (producción y tests). |
+| **Composite** | `CompositeOrderNotifier` | `OrderService` ve un solo `OrderNotifier`, que reenvía el evento al log y a las métricas y aísla el fallo de cualquiera de ellos (sección 13). |
 | **Factory Method** | `Product.create`, `Order.place` | Construir entidades válidas aplicando las reglas de negocio. |
 
 ## 5. Flujo de autenticación y autorización
@@ -336,6 +338,8 @@ curl -s -X POST localhost:5000/products -H "Authorization: Bearer <token>" -H "C
 | `FLASK_DEBUG` | No | `false` | Depurador de Werkzeug (nunca en un entorno expuesto). |
 | `FLASK_HOST` / `FLASK_PORT` | No | `127.0.0.1` / `5000` | Dirección del servidor de desarrollo. |
 | `SEED_ADMIN_PASSWORD` / `SEED_CLIENT_PASSWORD` | No | vacío | Contraseñas de `admin` y `juan`, solo si la tabla `users` está vacía. Vacías → no se crean. |
+| `LOG_LEVEL` | No | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL`. |
+| `LOG_FORMAT` | No | `json` | `json` (producción y contenedores) o `text` (lectura local). |
 
 ```mermaid
 flowchart LR
@@ -415,3 +419,76 @@ sequenceDiagram
 | `schema.init_db(db_path, password_hasher, seed_users=())` | Los usuarios semilla llegan como parámetro y los productos se siembran por separado. |
 | `build_container(..., seed_users=())` | Pasa los usuarios semilla a `init_db`. |
 | `create_app(container, secret_key)` | El contenedor ahora es obligatorio (sin valores por defecto ocultos). |
+
+## 13. Observabilidad: logs JSON y métricas Prometheus (RNF-05.1, RNF-05.2)
+
+### 13.1 Logs estructurados
+
+`app.py` llama a `configure_logging(settings.log_level, settings.log_json)`, que deja un solo handler hacia **stdout**: es lo que recogen Docker, Kubernetes y Azure Container Apps/Log Analytics. Cada línea es un objeto JSON:
+
+```json
+{"level": "INFO", "logger": "orderhub.http", "message": "Petición HTTP atendida",
+ "method": "POST", "path": "/create_order", "endpoint": "/create_order", "status": 201,
+ "duration_ms": 11.95, "remote_addr": "127.0.0.1", "request_id": "demo-001",
+ "user_id": 2, "timestamp": "2026-11-04T07:09:01.612583+00:00"}
+```
+
+- **Marca de tiempo** ISO 8601 en UTC, **nivel**, **logger** y **mensaje** en todos los registros.
+- **Contexto de la petición:** `RequestContextFilter` agrega `request_id` y `user_id` (si hay sesión) a *cualquier* log emitido durante la petición. Así la notificación de una orden (`event: order_created`, con `order_id`, `total`...) queda enlazada con la petición HTTP que la originó.
+- **Una línea por petición** (`logger: orderhub.http`) con método, ruta, código y duración. El nivel depende del resultado: INFO (2xx/3xx), WARNING (4xx) o ERROR (5xx). Los errores no controlados incluyen la traza en `exc_info`.
+- **X-Request-ID:** si el cliente envía uno válido (`[A-Za-z0-9._-]{1,64}`) se reutiliza; si no, se genera uno. Siempre se devuelve en la respuesta. Rechazar valores con otros caracteres evita inyectar texto en los logs.
+
+### 13.2 Métricas (`GET /metrics`)
+
+`Metrics` crea los colectores en un `CollectorRegistry` propio (uno por contenedor de dependencias, así las pruebas pueden crear varias apps).
+
+| Métrica | Tipo | Etiquetas | Uso RED |
+| :--- | :--- | :--- | :--- |
+| `orderhub_http_requests_total` | Counter | `method`, `endpoint`, `status` | **R**ate y **E**rrors |
+| `orderhub_http_request_duration_seconds` | Histogram | `method`, `endpoint` | **D**uration (latencia, percentiles) |
+| `orderhub_http_requests_in_progress` | Gauge | — | Saturación |
+| `orderhub_orders_created_total` | Counter | — | Métrica de negocio |
+
+- `endpoint` es la **plantilla de la ruta** (`/products`), no la URL real: así la cantidad de series no crece sin control. Las URLs desconocidas se agrupan en `<sin_ruta>`.
+- `/metrics` no se mide a sí misma, para que el *scraping* de Prometheus no ensucie las métricas RED.
+- **Consultas PromQL** que usará el dashboard de Grafana (RNF-05.3, con docker-compose):
+  - Tasa: `sum(rate(orderhub_http_requests_total[5m])) by (endpoint)`
+  - Errores: `sum(rate(orderhub_http_requests_total{status=~"5.."}[5m])) / sum(rate(orderhub_http_requests_total[5m]))`
+  - Latencia p95: `histogram_quantile(0.95, sum(rate(orderhub_http_request_duration_seconds_bucket[5m])) by (le, endpoint))`
+
+### 13.3 Cómo se integra sin romper la hexagonal
+
+```mermaid
+flowchart LR
+    REQ[Petición HTTP] --> HOOK["request_observability<br/>before/after/teardown_request"]
+    HOOK -- "log JSON" --> OUT[stdout]
+    HOOK -- "observe_request()" --> MET[(Metrics<br/>CollectorRegistry)]
+    SVC[OrderService] -- "order_created()" --> COMP[CompositeOrderNotifier]
+    COMP --> CON["ConsoleOrderNotifier<br/>log event=order_created"]
+    COMP --> MN["MetricsOrderNotifier<br/>orders_created_total++"]
+    MN --> MET
+    CON --> OUT
+    PROM[Prometheus] -- "GET /metrics" --> MET
+```
+
+- `domain/` y `application/` **no importan** `prometheus_client` ni el logging JSON. `OrderService` sigue llamando a su puerto `OrderNotifier`; el `CompositeOrderNotifier` del composition root reparte el evento.
+- Si un notificador falla (p. ej. un futuro correo caído), el Composite registra el error y sigue con los demás: la orden ya está confirmada.
+
+### 13.4 Consideraciones para producción
+
+- **`/metrics` es pública.** Dentro de Kubernetes solo la consulta Prometheus. En Azure se puede restringir por red/ingress si se expone a internet. No contiene datos personales.
+- **Varios procesos:** `prometheus_client` guarda las métricas en memoria de cada proceso. Con gunicorn y varios *workers* se debe usar el modo multiproceso (`PROMETHEUS_MULTIPROC_DIR`) o un solo worker con hilos por contenedor y escalar con réplicas (HPA). Se decidirá en la entrega de contenerización.
+
+### Funciones nuevas (entrega de observabilidad)
+
+| Función / clase | Descripción |
+| :--- | :--- |
+| `configure_logging(level, json_format=True, stream=None)` | Configura el logger raíz con un handler JSON (o texto) hacia stdout. |
+| `RequestContextFilter` | Agrega `request_id` y `user_id` a los registros emitidos durante una petición. |
+| `register_request_observability(app, metrics=None)` | Hooks de request id, log por petición y métricas RED. |
+| `endpoint_label()` | Plantilla de la ruta actual o `<sin_ruta>`. |
+| `Metrics` / `observe_request()` / `render()` | Colectores Prometheus, registro de una petición y texto de exposición. |
+| `metrics_routes.metrics()` | `GET /metrics`. |
+| `MetricsOrderNotifier` | Cuenta las órdenes confirmadas. |
+| `CompositeOrderNotifier` | Reenvía el evento a varios notificadores y aísla sus fallos. |
+| `Settings.log_level` / `Settings.log_json` | Desde `LOG_LEVEL` y `LOG_FORMAT`. |
