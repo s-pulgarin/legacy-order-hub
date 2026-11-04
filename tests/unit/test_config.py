@@ -59,6 +59,12 @@ def test_secret_key_ausente_corta_o_publicada_impide_arrancar(secret):
         load_settings({"SECRET_KEY": secret})
 
 
+@pytest.mark.parametrize("value", ["false", "0", "no", "off"])
+def test_flask_debug_acepta_valores_falsos(value):
+    settings = load_settings({"SECRET_KEY": VALID_KEY, "FLASK_DEBUG": value})
+    assert settings.debug is False
+
+
 @pytest.mark.parametrize(
     "variable, value",
     [("JWT_EXPIRES_MINUTES", "abc"), ("FLASK_PORT", "-1"), ("FLASK_DEBUG", "quizas")],
