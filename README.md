@@ -131,3 +131,15 @@ docker compose up -d --build
 - Prometheus: http://localhost:9090
 
 Levanta la API (gunicorn), el worker de notificaciones, PostgreSQL, Redis, Prometheus y Grafana. Ver `docs/ARCHITECTURE.md` §14.
+
+### Kubernetes local (Minikube)
+
+```bash
+minikube start --driver=docker && minikube addons enable metrics-server
+docker build -t orderhub:local . && minikube image load orderhub:local
+python scripts/k8s_secret_from_env.py      # genera k8s/secret.yaml desde .env (no se versiona)
+kubectl apply -k k8s/
+kubectl -n orderhub port-forward service/api 8080:8000
+```
+
+Incluye un HPA de 2 a 5 réplicas (70 % de CPU). Ver `docs/ARCHITECTURE.md` §15.

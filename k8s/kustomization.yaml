@@ -1,0 +1,13 @@
+# Aplica todo con:  kubectl apply -k k8s/
+# Requiere k8s/secret.yaml (no versionado): python scripts/k8s_secret_from_env.py
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - postgres.yaml
+  - redis.yaml
+  - api.yaml
+  - worker.yaml
+  - hpa.yaml

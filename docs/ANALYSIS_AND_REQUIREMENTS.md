@@ -250,8 +250,8 @@ Los requisitos de las secciones 2 y 3 no cambian. Esta sección registra cómo y
 | RNF-04.1 Pipeline en cada PR | ✅ | `.github/workflows/ci.yml` (push y pull_request a `main`) |
 | RNF-03.1 Contenedores (app, PostgreSQL, Redis) con Dockerfile multi-stage | ✅ | `Dockerfile` builder/runtime, usuario no root, gunicorn; `postgres:17-alpine` y `redis:7.4-alpine` |
 | RNF-03.2 docker-compose para desarrollo | ✅ | `docker-compose.yml`: api, worker, db, redis, prometheus y grafana |
-| RNF-03.3 Kubernetes (Minikube/k3s) | ⏳ | Siguiente entrega |
-| RNF-03.4 HPA | ⏳ | Siguiente entrega |
+| RNF-03.3 Kubernetes (Minikube/k3s) | ✅ | `k8s/`: Deployment, Service, ConfigMap, Secret (plantilla), StatefulSet; probado en Minikube |
+| RNF-03.4 HPA | ✅ | `k8s/hpa.yaml`: 2 a 5 réplicas al 70 % de CPU; demostrado con carga (2 → 5) |
 | RNF-04.2 Pruebas, análisis y build de imagen en CI | ✅ | Jobs `tests` (SQLite + PostgreSQL), `lint`, `security` y `docker` (build + humo) |
 | RNF-05.1 Logs JSON | ✅ | `configure_logging` (python-json-logger): timestamp, nivel y contexto (`request_id`, `user_id`, datos de la petición) |
 | RNF-05.2 Endpoint `/metrics` | ✅ | `prometheus_client`: métricas RED + `orderhub_orders_created_total` |

@@ -22,8 +22,13 @@ def init_db(
 
     Igual que en SQLite: los usuarios semilla (con hash) solo se crean si la
     tabla `users` está vacía y los productos iniciales si `products` lo está.
+    Es seguro llamarla desde varias réplicas a la vez (advisory lock).
     """
     with get_connection(database_url) as conn:
+        # Varias réplicas (Kubernetes, Container Apps) arrancan a la vez: este
+        # lock de transacción hace que solo una inicialice y las demás esperen,
+        # evitando tablas o usuarios semilla duplicados.
+        conn.execute("SELECT pg_advisory_xact_lock(4210)")
         conn.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -1,0 +1,7 @@
+# Espacio de nombres propio para todos los recursos de OrderHub.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orderhub
+  labels:
+    app.kubernetes.io/part-of: orderhub

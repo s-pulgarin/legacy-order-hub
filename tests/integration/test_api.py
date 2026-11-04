@@ -485,3 +485,29 @@ def test_healthcheck_is_ok_and_does_not_pollute_metrics_or_logs(client, json_log
     probe = {"method": "GET", "endpoint": "/healthcheck", "status": "200"}
     assert _metric(client, "orderhub_http_requests_total", probe) == 0
     assert [r for r in json_logs() if r["logger"] == "orderhub.http"] == []
+
+
+def test_concurrent_startup_initializes_the_database_once(backend):
+    """Varias réplicas arrancando a la vez no duplican tablas ni usuarios semilla."""
+    import threading
+
+    if backend.name != "postgres":
+        pytest.skip("Solo PostgreSQL corre con varias réplicas (SQLite es local)")
+
+    errors = []
+
+    def start_replica():
+        try:
+            backend.build(SECRET, SEED_USERS)
+        except Exception as exc:  # pragma: no cover - solo si falla
+            errors.append(exc)
+
+    replicas = [threading.Thread(target=start_replica) for _ in range(4)]
+    for replica in replicas:
+        replica.start()
+    for replica in replicas:
+        replica.join()
+
+    assert errors == []
+    assert backend.count_users() == 2
+    assert backend.count_products() == 2
