@@ -5,8 +5,14 @@
 from dataclasses import dataclass
 from typing import Iterable
 
+from orderhub.adapters.outbound.notifications.composite_notifier import (
+    CompositeOrderNotifier,
+)
 from orderhub.adapters.outbound.notifications.console_notifier import (
     ConsoleOrderNotifier,
+)
+from orderhub.adapters.outbound.notifications.metrics_notifier import (
+    MetricsOrderNotifier,
 )
 from orderhub.adapters.outbound.persistence.sqlite.schema import SeedUser, init_db
 from orderhub.adapters.outbound.persistence.sqlite.unit_of_work import (
@@ -19,6 +25,7 @@ from orderhub.application.ports.token_service import TokenService
 from orderhub.application.services.auth_service import AuthService
 from orderhub.application.services.order_service import OrderService
 from orderhub.application.services.product_service import ProductService
+from orderhub.observability.metrics import Metrics
 
 DEFAULT_TOKEN_EXPIRES_MINUTES = 30
 
@@ -30,6 +37,7 @@ class Container:
     auth_service: AuthService
     order_service: OrderService
     product_service: ProductService
+    metrics: Metrics
 
 
 def build_container(
@@ -49,6 +57,10 @@ def build_container(
     password_hasher = password_hasher or Argon2PasswordHasher()
     token_service = token_service or JWTTokenService(secret_key, token_expires_minutes)
     init_db(db_path, password_hasher, seed_users)
+    metrics = Metrics()
+    notifier = CompositeOrderNotifier(
+        [ConsoleOrderNotifier(), MetricsOrderNotifier(metrics)]
+    )
 
     def uow_factory():
         """Crea una Unit of Work nueva por caso de uso (una conexión por petición)."""
@@ -56,6 +68,7 @@ def build_container(
 
     return Container(
         auth_service=AuthService(uow_factory, password_hasher, token_service),
-        order_service=OrderService(uow_factory, ConsoleOrderNotifier()),
+        order_service=OrderService(uow_factory, notifier),
         product_service=ProductService(uow_factory),
+        metrics=metrics,
     )

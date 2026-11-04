@@ -1,17 +1,24 @@
-"""Instrumentación de cada petición HTTP: request id y log estructurado (RNF-05.1)."""
+"""Instrumentación de cada petición HTTP: request id, log JSON (RNF-05.1) y
+métricas RED (RNF-05.2)."""
 
 import logging
 import re
 import uuid
 from time import perf_counter
 
+from typing import Optional
+
 from flask import Flask, g, request
+
+from orderhub.observability.metrics import Metrics
 
 logger = logging.getLogger("orderhub.http")
 
 # Solo se acepta un X-Request-ID entrante "limpio" (evita inyectar texto en los logs).
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UNMATCHED_ENDPOINT = "<sin_ruta>"
+# /metrics no se mide a sí misma: Prometheus la consulta cada pocos segundos.
+UNMEASURED_ENDPOINTS = {"/metrics"}
 
 
 def _request_id() -> str:
@@ -36,20 +43,31 @@ def _log_level(status: int) -> int:
     return logging.INFO
 
 
-def register_request_observability(app: Flask) -> None:
-    """Registra los hooks que asignan el request id y registran cada petición."""
+def register_request_observability(app: Flask, metrics: Optional[Metrics] = None):
+    """Registra los hooks que asignan el request id, registran cada petición en
+    el log y, si se pasan `metrics`, alimentan las métricas RED.
+    """
 
     @app.before_request
     def start_request():
         """Asigna el request id y marca el inicio para medir la duración."""
         g.request_id = _request_id()
         g.request_started_at = perf_counter()
+        g.measured = (
+            metrics is not None and endpoint_label() not in UNMEASURED_ENDPOINTS
+        )
+        if g.measured:
+            metrics.http_requests_in_progress.inc()
 
     @app.after_request
     def finish_request(response):
         """Devuelve el request id en la cabecera y registra la petición en JSON."""
         elapsed = perf_counter() - g.request_started_at
         response.headers["X-Request-ID"] = g.request_id
+        if g.measured:
+            metrics.observe_request(
+                request.method, endpoint_label(), response.status_code, elapsed
+            )
         logger.log(
             _log_level(response.status_code),
             "Petición HTTP atendida",
@@ -63,3 +81,9 @@ def register_request_observability(app: Flask) -> None:
             },
         )
         return response
+
+    @app.teardown_request
+    def end_request(_error):
+        """Baja el contador de peticiones en curso, incluso si hubo una excepción."""
+        if getattr(g, "measured", False):
+            metrics.http_requests_in_progress.dec()

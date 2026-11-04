@@ -418,3 +418,59 @@ def test_valid_incoming_request_id_is_reused_and_unsafe_one_replaced(client):
     assert reused.headers["X-Request-ID"] == "trace-123"
     assert replaced.headers["X-Request-ID"] != unsafe
     assert len(replaced.headers["X-Request-ID"]) == 32
+
+
+# --- Observabilidad: endpoint /metrics (RNF-05.2) -------------------------------
+
+
+def _metric(client, name, labels=None):
+    registry = client.application.extensions["orderhub"].metrics.registry
+    return registry.get_sample_value(name, labels or {}) or 0
+
+
+def test_metrics_endpoint_exposes_prometheus_format(client):
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.content_type.startswith("text/plain")
+    assert b"orderhub_http_requests_total" in response.data
+    assert b"orderhub_http_request_duration_seconds" in response.data
+
+
+def test_red_metrics_count_requests_errors_and_latency(client, client_headers):
+    client.get("/products")
+    client.get("/products")
+    client.post(
+        "/create_order", json={"product_id": 1, "quantity": 99}, headers=client_headers
+    )
+
+    ok = {"method": "GET", "endpoint": "/products", "status": "200"}
+    error = {"method": "POST", "endpoint": "/create_order", "status": "400"}
+    latency = {"method": "GET", "endpoint": "/products"}
+    assert _metric(client, "orderhub_http_requests_total", ok) == 2
+    assert _metric(client, "orderhub_http_requests_total", error) == 1
+    assert _metric(client, "orderhub_http_request_duration_seconds_count", latency) == 2
+    assert _metric(client, "orderhub_http_requests_in_progress") == 0
+
+
+def test_orders_created_metric_counts_only_successful_orders(client, client_headers):
+    client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=client_headers
+    )
+    client.post(
+        "/create_order", json={"product_id": 1, "quantity": 99}, headers=client_headers
+    )
+
+    assert _metric(client, "orderhub_orders_created_total") == 1
+    assert b"orderhub_orders_created_total 1.0" in client.get("/metrics").data
+
+
+def test_metric_labels_use_route_templates_not_raw_urls(client):
+    client.get("/no-existe-1")
+    client.get("/no-existe-2")
+    client.get("/metrics")
+
+    unmatched = {"method": "GET", "endpoint": "<sin_ruta>", "status": "404"}
+    assert _metric(client, "orderhub_http_requests_total", unmatched) == 2
+    scraped = {"method": "GET", "endpoint": "/metrics", "status": "200"}
+    assert _metric(client, "orderhub_http_requests_total", scraped) == 0
