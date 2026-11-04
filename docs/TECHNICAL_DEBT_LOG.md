@@ -87,7 +87,7 @@
 | **Impacto** | Ante un error, el depurador interactivo permite ejecutar código Python en el servidor (protegido solo por un PIN). |
 | **Remediación** | Sacar `debug` y `host` a la configuración por entorno (desactivados por defecto) y usar un servidor WSGI de producción (gunicorn). |
 | **Requisito** | RNF-02.1, RNF-03.1 |
-| **Esfuerzo / Estado** | S · ✅ **Resuelto (tercera entrega)**: `app.run(host=settings.host, port=settings.port, debug=settings.debug)` con valores seguros por defecto (`FLASK_DEBUG=false`, `FLASK_HOST=127.0.0.1`). Bandit ya no reporta B201 ni B104. Falta el servidor WSGI de producción (gunicorn) para la contenerización (HU-06). |
+| **Esfuerzo / Estado** | S · ✅ **Resuelto (tercera entrega)**: `app.run(host=settings.host, port=settings.port, debug=settings.debug)` con valores seguros por defecto (`FLASK_DEBUG=false`, `FLASK_HOST=127.0.0.1`). Bandit ya no reporta B201 ni B104. En el contenedor se sirve con gunicorn (`gunicorn.conf.py`), no con el servidor de desarrollo. |
 
 ### 🟠 TD-05 · Exposición de datos sensibles en respuestas y logs
 | Campo | Detalle |
@@ -182,7 +182,7 @@
 | **Ubicación** | `app.py:69` |
 | **Descripción** | La "notificación por correo" no existe. Si se implementara en ese mismo lugar, bloquearía la respuesta y, si fallara, la orden ya estaría confirmada sin aviso. |
 | **Requisito** | RF-04.1 |
-| **Esfuerzo / Estado** | M · **Parcial en PR #1** (puerto `OrderNotifier`; falta un adaptador asíncrono) |
+| **Esfuerzo / Estado** | M · ✅ **Resuelto (entrega de contenedores)**: `RedisOrderNotifier` encola el evento y el `worker` lo procesa en otro proceso, con cola de fallidos y reintentos. Si Redis cae, la orden igual se confirma. |
 
 ### 🟡 TD-14 · Esquema sin integridad referencial ni restricciones
 | Campo | Detalle |
@@ -190,7 +190,7 @@
 | **Ubicación** | `database.py:12-39` |
 | **Descripción** | No hay `FOREIGN KEY`, `UNIQUE(username)`, `NOT NULL` ni `CHECK(stock >= 0)`. El dinero se guarda como `REAL` (errores de redondeo). No hay migraciones. |
 | **Requisito** | Estado objetivo del README: PostgreSQL + SQLAlchemy/Alembic |
-| **Esfuerzo / Estado** | M · **Abierto** |
+| **Esfuerzo / Estado** | M · ✅ **Resuelto en PostgreSQL (entrega de contenedores)**: `UNIQUE(username)`, claves foráneas, `CHECK` de stock/precio/cantidad/rol y `DOUBLE PRECISION`. El esquema SQLite heredado se mantiene igual para desarrollo rápido. Pendiente: migraciones versionadas (Alembic). |
 
 ### 🟡 TD-15 · Logging no estructurado (`print`)
 | Campo | Detalle |
@@ -296,3 +296,4 @@ Queda **1 hallazgo Low, falso positivo**: B105 en `auth_routes.py` por la cadena
 | 2026-10-19 | Tercera entrega: TD-01 (SQLi) y TD-02 (secretos) resueltos, junto con TD-04 y TD-16; TD-10 y TD-18 actualizados; nuevo análisis con Bandit (4.4). |
 | 2026-11-04 | Entrega CI: TD-10 (cobertura 99,8 %) y TD-11 (dependencias vulnerables) resueltos; Bandit y pip-audit integrados en GitHub Actions. |
 | 2026-11-04 | Entrega de observabilidad: TD-15 (logging con `print`) resuelto con logs JSON y métricas Prometheus. |
+| 2026-11-04 | Entrega de contenedores: TD-13 (notificación síncrona) y TD-14 (integridad del esquema, en PostgreSQL) resueltos; gunicorn en producción (TD-04). |

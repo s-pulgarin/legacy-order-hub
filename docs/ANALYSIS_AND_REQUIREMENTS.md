@@ -240,7 +240,7 @@ Los requisitos de las secciones 2 y 3 no cambian. Esta sección registra cómo y
 | RF-03.1 / RF-03.2 Registrar orden y calcular total | ✅ | `Order.place`, `POST /create_order` |
 | RF-03.3 Consistencia transaccional | ✅ | `SqliteUnitOfWork`: rollback ante cualquier error antes del `commit()` |
 | RF-03.4 Listar órdenes | ✅ | `GET /get_all_orders_legacy` (solo admin) |
-| RF-04.1 Notificación no bloqueante | 🟡 | Puerto `OrderNotifier` listo; falta un adaptador asíncrono |
+| RF-04.1 Notificación no bloqueante | ✅ | `RedisOrderNotifier` encola el evento y el `worker` lo procesa aparte; la respuesta no espera |
 | RNF-01.1 Arquitectura hexagonal | ✅ | `domain/`, `application/`, `adapters/`, `container.py` |
 | RNF-01.2 Cobertura ≥ 80 % | ✅ | 114 pruebas, 99,8 % de cobertura con `pytest-cov`; `fail_under = 80` en `pyproject.toml` y en el CI |
 | RNF-01.3 PEP 8 | ✅ | `black` + `flake8` sin avisos |
@@ -248,10 +248,14 @@ Los requisitos de las secciones 2 y 3 no cambian. Esta sección registra cómo y
 | **RNF-02.2** Prevención de SQL Injection | ✅ | Todas las consultas usan parameter binding (`?`); `tests/unit/test_sql_safety.py` lo verifica automáticamente |
 | RNF-02.3 SAST en el flujo | ✅ | Job `security` del CI: Bandit (falla con severidad media o alta) y pip-audit |
 | RNF-04.1 Pipeline en cada PR | ✅ | `.github/workflows/ci.yml` (push y pull_request a `main`) |
-| RNF-04.2 Pruebas, análisis y build de imagen en CI | 🟡 | Pruebas y análisis estático listos; el build de la imagen llega con el `Dockerfile` |
+| RNF-03.1 Contenedores (app, PostgreSQL, Redis) con Dockerfile multi-stage | ✅ | `Dockerfile` builder/runtime, usuario no root, gunicorn; `postgres:17-alpine` y `redis:7.4-alpine` |
+| RNF-03.2 docker-compose para desarrollo | ✅ | `docker-compose.yml`: api, worker, db, redis, prometheus y grafana |
+| RNF-03.3 Kubernetes (Minikube/k3s) | ⏳ | Siguiente entrega |
+| RNF-03.4 HPA | ⏳ | Siguiente entrega |
+| RNF-04.2 Pruebas, análisis y build de imagen en CI | ✅ | Jobs `tests` (SQLite + PostgreSQL), `lint`, `security` y `docker` (build + humo) |
 | RNF-05.1 Logs JSON | ✅ | `configure_logging` (python-json-logger): timestamp, nivel y contexto (`request_id`, `user_id`, datos de la petición) |
 | RNF-05.2 Endpoint `/metrics` | ✅ | `prometheus_client`: métricas RED + `orderhub_orders_created_total` |
-| RNF-05.3 Dashboard Grafana | ⏳ | Llega con docker-compose (Prometheus + Grafana); las consultas PromQL están en `ARCHITECTURE.md` §13.2 |
+| RNF-05.3 Dashboard Grafana | ✅ | Dashboard RED aprovisionado en Grafana (docker-compose), alimentado por Prometheus |
 
 ### 5.1 Uso de variables de entorno (RNF-02.1)
 
