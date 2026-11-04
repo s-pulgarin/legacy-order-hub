@@ -599,3 +599,62 @@ Entrar en http://localhost:3000 con el usuario `admin` y la contraseña `GRAFANA
 ### 14.6 CI
 
 El job `docker` construye la imagen, verifica que no corre como root, hace una prueba de humo de `/healthcheck` bajo gunicorn y valida `docker-compose.yml` (RNF-04.2). El job `tests` corre contra SQLite y PostgreSQL.
+
+## 15. Kubernetes con autoescalado (RNF-03.3, RNF-03.4)
+
+Manifiestos declarativos en `k8s/`, probados en **Minikube 1.39 (Kubernetes 1.37)** con el addon `metrics-server`.
+
+```mermaid
+flowchart LR
+    subgraph ns [namespace orderhub]
+        SVC["Service api<br/>NodePort 30080"] --> P1[api pod]
+        SVC --> P2[api pod]
+        SVC -.-> P3["api pod<br/>(HPA: 2 a 5)"]
+        HPA[HorizontalPodAutoscaler<br/>70 % CPU] -- escala --> DEP[Deployment api]
+        DEP --> P1 & P2 & P3
+        P1 & P2 & P3 --> DB[("StatefulSet postgres<br/>+ PVC 1Gi")]
+        P1 & P2 & P3 --> R[(Deployment redis)]
+        W[Deployment worker] --> R
+        CM[ConfigMap] -.-> DEP & W
+        SEC[Secret] -.-> DEP & W & DB
+    end
+```
+
+| Archivo | Recursos |
+| :--- | :--- |
+| `namespace.yaml` | `Namespace orderhub` |
+| `configmap.yaml` | `ConfigMap orderhub-config`: configuración no sensible (logs, JWT, `REDIS_URL`, usuario y base de PostgreSQL) |
+| `secret.example.yaml` | Plantilla del `Secret orderhub-secrets` (`SECRET_KEY`, `POSTGRES_PASSWORD`, `SEED_*`). El real (`k8s/secret.yaml`) se genera con `python scripts/k8s_secret_from_env.py` desde el `.env` y **está en `.gitignore`** |
+| `postgres.yaml` | `StatefulSet` + `Service` headless `db` + `PersistentVolumeClaim` de 1 Gi |
+| `redis.yaml` | `Deployment` + `Service redis` |
+| `api.yaml` | `Deployment api` (2 réplicas, *rolling update* sin caída) + `Service` NodePort |
+| `worker.yaml` | `Deployment worker` |
+| `hpa.yaml` | `HorizontalPodAutoscaler`: **2 a 5 réplicas al 70 % de CPU** (sube de inmediato y baja tras 120 s estables) |
+| `kustomization.yaml` | Aplica todo con `kubectl apply -k k8s/` |
+| `tools/load-generator.yaml` | Pod de carga para demostrar el HPA (no es parte del despliegue) |
+
+**Sondas y seguridad del pod de la API**
+- `readinessProbe` y `livenessProbe` en `/healthcheck`. Un `initContainer` (`wait-for-db`) espera a que PostgreSQL acepte conexiones.
+- `runAsNonRoot` (uid 999), `readOnlyRootFilesystem` (con `/tmp` en un `emptyDir`), sin escalada de privilegios, `capabilities: drop ALL` y perfil `seccomp` por defecto.
+- `DATABASE_URL` se arma dentro del pod con `$(POSTGRES_USER)` y `$(POSTGRES_PASSWORD)`, así la contraseña solo vive en el Secret.
+
+**Problemas reales encontrados al probar en el clúster (y corregidos)**
+1. **Arranque concurrente:** las réplicas inicializaban la base a la vez y chocaban (usuario semilla duplicado). Ahora un *advisory lock* de PostgreSQL serializa `init_db`. La prueba `test_concurrent_startup_initializes_the_database_once` fallaba 3 de 3 veces sin el lock.
+2. **CrashLoop al arrancar:** la API arrancaba antes que PostgreSQL (`failed to resolve host 'db'`). Se agregó el `initContainer`; `pg_isready` necesita `-U` porque el pod corre con un uid sin usuario en la imagen.
+3. **OOMKilled bajo carga:** Argon2 usa 64 MiB por verificación. Con 4 hilos y un límite de 256 Mi, los pods morían, nunca quedaban listos y el HPA mostraba `cpu: <unknown>`. La memoria se dimensionó a `requests 192Mi / limits 512Mi`.
+
+**Prueba del autoescalado:** con `tools/load-generator.yaml` (6 bucles de `POST /login`), la CPU llegó al **345 %** del objetivo y el HPA escaló de **2 a 5 réplicas**, todas sanas y sin reinicios. Al quitar la carga volvió a 2 tras la ventana de estabilización.
+
+```bash
+minikube start --driver=docker --cpus=2 --memory=4096
+minikube addons enable metrics-server
+docker build -t orderhub:local . && minikube image load orderhub:local
+python scripts/k8s_secret_from_env.py
+kubectl apply -k k8s/
+kubectl -n orderhub get pods,hpa
+kubectl -n orderhub port-forward service/api 8080:8000   # http://localhost:8080
+kubectl apply -f k8s/tools/load-generator.yaml           # demo del HPA
+kubectl -n orderhub get hpa api --watch
+```
+
+> Prometheus y Grafana se demuestran en docker-compose (§14). En el clúster, los pods de la API llevan las anotaciones `prometheus.io/scrape` para un Prometheus que se instale aparte.
