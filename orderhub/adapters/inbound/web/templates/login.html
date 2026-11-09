@@ -1,0 +1,50 @@
+{% extends "auth_base.html" %}
+{% block title %}Iniciar sesión{% endblock %}
+{% block card %}
+<h1>Iniciar sesión</h1>
+<p class="lead">Ingresa con tu usuario y contraseña.</p>
+<div class="alert" id="alert" role="alert"></div>
+<form id="login-form" novalidate>
+  <div class="field">
+    <label for="username">Usuario</label>
+    <input class="input" id="username" name="username" autocomplete="username" required autofocus>
+  </div>
+  <div class="field">
+    <label for="password">Contraseña</label>
+    <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit" id="submit">Entrar</button>
+</form>
+<p class="switch">¿No tienes cuenta? <a href="/registro">Crear una cuenta</a></p>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const alertBox = document.getElementById("alert");
+    const params = new URLSearchParams(location.search);
+    if (params.get("expirada")) OrderHub.showAlert(alertBox, "Tu sesión expiró. Vuelve a ingresar.", "info");
+    if (params.get("registrado")) OrderHub.showAlert(alertBox, "Cuenta creada. Ya puedes ingresar.", "success");
+    if (OrderHub.session.get()) location.href = "/catalogo";
+
+    document.getElementById("login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      if (!username || !password) return OrderHub.showAlert(alertBox, "Escribe tu usuario y contraseña.");
+
+      const button = document.getElementById("submit");
+      button.disabled = true;
+      button.textContent = "Ingresando…";
+      const { ok, data } = await OrderHub.api("POST", "/login", { username, password });
+      if (ok) {
+        OrderHub.session.set({ token: data.token, user: data.user });
+        location.href = "/catalogo";
+        return;
+      }
+      OrderHub.showAlert(alertBox, OrderHub.errorMessage(data, "No se pudo iniciar sesión."));
+      button.disabled = false;
+      button.textContent = "Entrar";
+    });
+  })();
+</script>
+{% endblock %}

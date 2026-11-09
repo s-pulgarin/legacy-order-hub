@@ -1,0 +1,73 @@
+{% extends "app_base.html" %}
+{% block title %}Mis órdenes{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 id="title">Mis órdenes</h1>
+    <p id="subtitle">Historial de tus compras.</p>
+  </div>
+  <div data-admin-only hidden>
+    <button class="btn btn-ghost btn-sm" type="button" id="toggle">Ver todas las órdenes</button>
+  </div>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Orden</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Total</th><th>Estado</th><th data-col-user hidden>Usuario</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="6" class="empty">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="empty" id="empty" hidden>Aún no tienes órdenes. <a href="/catalogo">Ir al catálogo</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const s = OrderHub.requireSession();
+    if (!s) return;
+    const { el } = OrderHub;
+    let showAll = false;
+
+    async function load() {
+      const [orders, products] = await Promise.all([
+        OrderHub.api("GET", showAll ? "/get_all_orders_legacy" : "/my_orders"),
+        OrderHub.api("GET", "/products"),
+      ]);
+      if (!orders.ok) return OrderHub.toast("No se pudieron cargar las órdenes.", true);
+      const names = new Map((products.data || []).map((p) => [p.id, p.name]));
+
+      document.querySelectorAll("[data-col-user]").forEach((c) => (c.hidden = !showAll));
+      const rows = orders.data.slice().reverse().map((order) => {
+        const tr = el("tr");
+        tr.append(
+          el("td", "", "#" + order.id),
+          el("td", "", names.get(order.product_id) || "Producto " + order.product_id),
+          el("td", "num", order.quantity),
+          el("td", "num", OrderHub.formatMoney(order.total)),
+        );
+        const status = el("td");
+        status.append(el("span", "badge badge-amber", order.status === "PENDING" ? "Pendiente" : order.status));
+        tr.append(status);
+        const user = el("td", "", order.user_id);
+        user.hidden = !showAll;
+        tr.append(user);
+        return tr;
+      });
+      document.getElementById("rows").replaceChildren(...rows);
+      document.getElementById("empty").hidden = rows.length > 0;
+    }
+
+    document.getElementById("toggle").addEventListener("click", (event) => {
+      showAll = !showAll;
+      event.target.textContent = showAll ? "Ver solo las mías" : "Ver todas las órdenes";
+      document.getElementById("title").textContent = showAll ? "Todas las órdenes" : "Mis órdenes";
+      document.getElementById("subtitle").textContent = showAll ? "Órdenes de todos los usuarios." : "Historial de tus compras.";
+      load();
+    });
+
+    load();
+  })();
+</script>
+{% endblock %}

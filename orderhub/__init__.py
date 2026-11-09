@@ -24,7 +24,11 @@ def create_app(container: Container, secret_key: str) -> Flask:
     `secret_key` leída del entorno; no tiene valores por defecto ocultos. El
     formato de los logs lo configura el punto de entrada (`configure_logging`).
     """
-    app = Flask(__name__, template_folder="adapters/inbound/web/templates")
+    app = Flask(
+        __name__,
+        template_folder="adapters/inbound/web/templates",
+        static_folder="adapters/inbound/web/static",
+    )
     app.config["SECRET_KEY"] = secret_key
     app.extensions["orderhub"] = container
 

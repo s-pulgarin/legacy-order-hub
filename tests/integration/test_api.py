@@ -42,10 +42,34 @@ def client_headers(client):
     return _login(client, "juan", "123456")
 
 
-def test_index_renders(client):
+def test_root_redirects_to_login(client):
     response = client.get("/")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+@pytest.mark.parametrize(
+    "path, text",
+    [
+        ("/login", "Iniciar sesión"),
+        ("/registro", "Crear cuenta"),
+        ("/catalogo", "Catálogo"),
+        ("/ordenes", "Mis órdenes"),
+        ("/admin/productos", "Nuevo producto"),
+        ("/dev", "Legacy OrderHub"),
+    ],
+)
+def test_ui_pages_render(client, path, text):
+    response = client.get(path)
     assert response.status_code == 200
-    assert b"Legacy OrderHub" in response.data
+    assert text in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("path", ["/static/css/app.css", "/static/js/app.js"])
+def test_static_assets_are_served(client, path):
+    response = client.get(path)
+    assert response.status_code == 200
+    response.close()
 
 
 # --- Login y registro (RF-01.1, RF-01.2) -----------------------------------
@@ -511,3 +535,23 @@ def test_concurrent_startup_initializes_the_database_once(backend):
     assert errors == []
     assert backend.count_users() == 2
     assert backend.count_products() == 2
+
+
+# --- Mis órdenes ----------------------------------------------------------------
+
+
+def test_my_orders_returns_only_the_callers_orders(
+    client, admin_headers, client_headers
+):
+    client.post(
+        "/create_order", json={"product_id": 2, "quantity": 1}, headers=client_headers
+    )
+    client.post(
+        "/create_order", json={"product_id": 2, "quantity": 2}, headers=admin_headers
+    )
+
+    mine = client.get("/my_orders", headers=client_headers)
+
+    assert mine.status_code == 200
+    assert [(o["user_id"], o["quantity"]) for o in mine.get_json()] == [(2, 1)]
+    assert client.get("/my_orders").status_code == 401
