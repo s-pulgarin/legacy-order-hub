@@ -110,3 +110,12 @@ class PostgresOrderRepository(OrderRepository):
             " FROM orders ORDER BY id"
         ).fetchall()
         return [Order(**row) for row in rows]
+
+    def list_by_user(self, user_id: int) -> List[Order]:
+        """Devuelve las órdenes del usuario ordenadas por id."""
+        rows = self._conn.execute(
+            "SELECT id, user_id, product_id, quantity, total, status"
+            " FROM orders WHERE user_id = %s ORDER BY id",
+            (user_id,),
+        ).fetchall()
+        return [Order(**row) for row in rows]

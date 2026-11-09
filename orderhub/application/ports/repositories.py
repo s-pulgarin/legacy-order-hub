@@ -52,3 +52,7 @@ class OrderRepository(ABC):
     @abstractmethod
     def list_all(self) -> List[Order]:
         """Devuelve todas las órdenes registradas."""
+
+    @abstractmethod
+    def list_by_user(self, user_id: int) -> List[Order]:
+        """Devuelve las órdenes de un usuario, de la más antigua a la más reciente."""

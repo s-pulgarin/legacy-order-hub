@@ -67,6 +67,9 @@ class FakeOrderRepository(OrderRepository):
     def list_all(self):
         return list(self._orders)
 
+    def list_by_user(self, user_id):
+        return [o for o in self._orders if o.user_id == user_id]
+
 
 class FakeUnitOfWork(UnitOfWork):
     """Unit of Work en memoria que registra si se llamó a commit()."""

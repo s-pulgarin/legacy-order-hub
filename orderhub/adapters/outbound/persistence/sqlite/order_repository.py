@@ -36,3 +36,12 @@ class SqliteOrderRepository(OrderRepository):
             "SELECT id, user_id, product_id, quantity, total, status FROM orders"
         ).fetchall()
         return [Order(**dict(row)) for row in rows]
+
+    def list_by_user(self, user_id: int) -> List[Order]:
+        """Devuelve las órdenes del usuario ordenadas por id."""
+        rows = self._conn.execute(
+            "SELECT id, user_id, product_id, quantity, total, status FROM orders"
+            " WHERE user_id = ? ORDER BY id",
+            (user_id,),
+        ).fetchall()
+        return [Order(**dict(row)) for row in rows]
