@@ -1,138 +1,98 @@
-# Legacy OrderHub - Proyecto Base de Modernización y Mantenimiento
+# OrderHub: modernización de un sistema legado
 
-> **Asignatura:** Actualización y Mantenimiento de Software  
-> **Estado del Sistema:** Producción Legada (v1.0.0-legacy) — *Alta Deuda Técnica*  
-> **Nivel de Cobertura de Pruebas:** 0%  
+> **Asignatura:** Actualización y Mantenimiento de Software
+> **Estado:** v2.0, modernizado y desplegado. Partió de *Legacy OrderHub v1.0*, un monolito con alta deuda técnica.
+> **Demo en vivo:** https://orderhub-qcr5.onrender.com (plan gratuito: la primera carga puede tardar unos 30–60 s si el servicio está "dormido").
 
----
-
-## Descripción del Proyecto
-
-**Legacy OrderHub** es una aplicación monolítica encargada de la gestión básica de usuarios, catálogo de productos y procesamiento de órdenes de compra. El sistema fue desarrollado de manera acelerada años atrás para responder a una necesidad puntual de negocio, pero con el tiempo ha acumulado un nivel crítico de **deuda técnica, vulnerabilidades de seguridad y rigidez en la arquitectura**.
-
-Actualmente, el sistema presenta fallas de rendimiento ante picos de tráfico, no cuenta con un entorno de ejecución estandarizado (sin contenerizar), carece de telemetría u observabilidad y las actualizaciones de código se realizan mediante despliegues manuales propensos a errores humanos.
-
-Tu rol como ingeniero/a en este curso será asumir el mantenimiento de este sistema, auditarlo, estabilizarlo y aplicar técnicas modernas (Refactorización manual y asistida por IA, DevOps, Contenerización, SRE y CI/CD) para transformarlo progresivamente en una **aplicación nativa de la nube (Cloud-Native) v2.0**.
+[![CI](https://github.com/s-pulgarin/legacy-order-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/s-pulgarin/legacy-order-hub/actions/workflows/ci.yml)
+[![CD](https://github.com/s-pulgarin/legacy-order-hub/actions/workflows/cd.yml/badge.svg)](https://github.com/s-pulgarin/legacy-order-hub/actions/workflows/cd.yml)
 
 ---
 
-## Objetivos del Proyecto
+## Descripción
 
-### 🎯 Objetivo General
-Evolucionar y modernizar la aplicación **Legacy OrderHub** desde su estado monolítico vulnerable hasta una arquitectura escalable, segura, observadamente monitoreada y desplegada mediante flujos automatizados de CI/CD.
+**OrderHub** gestiona usuarios, un catálogo de productos con inventario y órdenes de compra.
 
-### 🎯 Objetivos Específicos por Unidad
+El proyecto partió de **Legacy OrderHub**: un único `app.py` con inyección SQL, contraseñas en texto plano, secretos en el código, ninguna prueba y despliegue manual. A lo largo del curso se auditó, se documentó por ingeniería inversa y se transformó en una aplicación **cloud-native**: arquitectura hexagonal, seguridad DevSecOps, pruebas automatizadas, CI/CD, contenedores, Kubernetes con autoescalado, observabilidad y despliegue público en Render.
 
-1. **Unidad I: Modernización Inteligente e Ingeniería Inversa**
-   * Realizar auditorías de código estático y dinámico para mapear la deuda técnica y las vulnerabilidades críticas.
-   * Refactorizar la arquitectura monolítica aplicando patrones de diseño (*Repository Pattern*, *Dependency Injection*) y asistencia de IA (Copilotos/Agentes).
-   * Eliminar vulnerabilidades de seguridad de alto impacto (SQL Injection, exposición de secretos, contraseñas en texto plano).
+## Funcionalidades
 
-2. **Unidad II: DevOps 2.0 y Calidad Automatizada**
-   * Automatizar el flujo de integración continua (CI) mediante GitHub Actions / GitLab CI.
-   * Implementar puertas de calidad (*Quality Gates*) para prevenir la entrada de nuevo código defectuoso.
-   * Asignar métricas cuantitativas al costo de la deuda técnica y estimación de refactorización.
+- **Interfaz web corporativa:** login, registro, catálogo con compra, "Mis órdenes" y administración de productos (solo admin).
+- **Autenticación segura:** contraseñas con **Argon2**, sesiones **JWT** con expiración y control de acceso por rol (`admin` / `client`).
+- **Inventario transaccional:** el stock solo se descuenta si la orden se guarda; las compras sin stock se rechazan.
+- **Notificaciones asíncronas:** cada orden se encola en **Redis** y un *worker* la procesa sin bloquear la respuesta.
+- **Observabilidad:** logs **JSON** con `request_id` y endpoint `/metrics` para **Prometheus**, con un dashboard **Grafana** de métricas RED.
 
-3. **Unidad III: Contenerización, IaC y SRE**
-   * Empaquetar la aplicación y sus dependencias utilizando contenedores Docker.
-   * Definir y desplegar la infraestructura en Kubernetes configurando autoescalado horizontal (HPA).
-   * Gestionar secretos y variables de entorno de forma segura e independiente del código.
+## Antes y después
 
-4. **Unidad IV: Despliegue Progresivo y Observabilidad**
-   * Instrumentar la aplicación para generación de logs estructurados, métricas de rendimiento y trazas distribuidas.
-   * Implementar estrategias de despliegue sin caída de servicio (*Blue/Green* o *Canary*).
-   * Automatizar pruebas de regresión y de carga asistidas por IA para validar paridad funcional y resiliencia.
-
----
-
-## Stack Tecnológico Actual vs. Estado Objetivo
-
-| Componente | Estado Actual (v1.0 - Legado) | Estado Objetivo (v2.0 - Modernizado) |
+| Componente | Legado (v1.0) | Actual (v2.0) |
 | :--- | :--- | :--- |
-| **Lenguaje / Framework** | Python 3.8 / Flask Monolítico | Python 3.11+ / Flask o FastAPI modular |
-| **Base de Datos** | SQLite (Sin migraciones / SQL Directo) | PostgreSQL + ORM (SQLAlchemy / Alembic) |
-| **Seguridad** | Secretos *hardcoded*, contraseñas plano | `.env` / Vault, Hash Bcrypt/Argon2, JWT |
-| **Pruebas** | Ninguna (0% coverage) | Pytest + Cobertura > 80% + Mocks de IA |
-| **Infraestructura** | Ejecución local/servidor directo | Docker Compose + Kubernetes (Minikube/k3s) |
-| **CI / CD** | Despliegue manual | GitHub Actions / GitLab CI + SonarQube |
-| **Observabilidad** | `print()` en consola | Prometheus + Grafana + Structured Logs (JSON) |
+| **Arquitectura** | Monolito en `app.py` | **Hexagonal**: dominio, puertos y adaptadores; Repository, Unit of Work, inyección de dependencias |
+| **Base de datos** | SQLite con SQL concatenado | **PostgreSQL** (producción) o SQLite (desarrollo), siempre con consultas parametrizadas |
+| **Seguridad** | SQL injection, contraseñas planas, secretos en código | **Argon2**, **JWT**, roles, cero secretos (`.env`), Bandit y pip-audit en el CI |
+| **Pruebas** | 0 % | **219 pruebas** (unitarias e integración contra SQLite y PostgreSQL), cobertura mínima obligatoria del **80 %** |
+| **Calidad** | Sin estándar | **PEP 8** con black y flake8 |
+| **CI/CD** | Despliegue manual | **GitHub Actions**: CI en cada PR y CD que publica la imagen en ghcr.io |
+| **Infraestructura** | Ejecución local | **Docker** multi-stage, **docker-compose**, **Kubernetes** (Minikube) con **HPA** de 2 a 5 réplicas |
+| **Despliegue** | Manual | **Render** (Blueprint `render.yaml`) con auto-deploy; estrategia para **Azure** (Canary/Blue-Green) |
+| **Observabilidad** | `print()` | Logs JSON, Prometheus y Grafana |
 
----
+## Estructura
 
-## Módulos y Puntos Críticos Detectados (Deuda Técnica)
+```
+orderhub/
+├── domain/                  Entidades y reglas de negocio (Python puro)
+├── application/
+│   ├── ports/               Interfaces: repositorios, Unit of Work, hasher, tokens, notificador
+│   └── services/            Casos de uso: auth, órdenes, productos
+├── adapters/
+│   ├── inbound/web/         Flask: rutas, decoradores JWT, interfaz (templates/ y static/)
+│   ├── inbound/queue/       Worker que consume la cola de Redis
+│   └── outbound/            PostgreSQL, SQLite, Argon2, JWT, Redis, métricas
+├── observability/           Logs JSON y métricas Prometheus
+└── container.py             Composition root (inyección de dependencias)
+tests/                       unit/ e integration/
+k8s/                         Manifiestos de Kubernetes y HPA
+monitoring/                  Prometheus y Grafana
+docs/                        Documentación técnica (ver abajo)
+app.py · worker.py · config.py · Dockerfile · docker-compose.yml · render.yaml
+```
 
-A continuación se resumen las áreas más críticas identificadas en el sistema actual que deberán ser abordadas durante el curso:
+## Cómo ejecutar
 
-* **Vulnerabilidades de Seguridad:** Inyección de SQL en el endpoint `/login`, almacenamiento de credenciales en texto plano y credenciales de base de datos expuestas en el repositorio (`config.py`).
-* **Código Acoplado (Spaghetti):** El endpoint `/create_order` mezcla control de HTTP, lógica de cálculo de negocio, transacciones a la base de datos y llamadas sincrónicas a servicios externos.
-* **Falta de Manejo de Errores y Transacciones:** Fallos en la red o llamadas externas dejan la base de datos en estados inconsistentes (p. ej., stock descontado sin notificación confirmada).
-* **Configuración Rígida:** Modo `debug=True` activado por defecto y puertos quemados en el código.
+Requisitos: Python 3.11+ y Git. Para el entorno completo: Docker Desktop. Para Kubernetes: Minikube.
 
----
+### 1. Local (rápido, con SQLite)
 
-## Guía de Inicio Rápido (Entorno Legado Local)
+```bash
+git clone https://github.com/s-pulgarin/legacy-order-hub.git
+cd legacy-order-hub
+python -m venv venv
+venv\Scripts\activate              # Windows   (Linux/macOS: source venv/bin/activate)
+pip install -r requirements-dev.txt
+cp .env.example .env               # completar SECRET_KEY y, opcional, SEED_ADMIN_PASSWORD / SEED_CLIENT_PASSWORD
+python app.py                      # http://localhost:5000
+```
 
-## La API estará disponible en http://localhost:5000.
+Para generar una `SECRET_KEY`: `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 
-### Reglas del Proyecto Durante el Curso
+### 2. Entorno completo con Docker
 
-1. Prohibido hacer Push directo a la rama main: Todas las modificaciones deben realizarse mediante ramas (Feature Branches) y ser integradas a través de Pull Requests.
-
-2. Cero Tolerancia a Secretos: No se aceptará ningún commit que contenga claves, tokens o contraseñas en texto plano.
-
-3. Documentación Continua: Cada refactorización o cambio arquitectónico importante debe quedar documentado en la carpeta /docs.
-
-¡Bienvenido/a al proceso de modernización! El éxito de la operación depende de tu capacidad para diagnosticar, refactorizar y automatizar.
-
-### Requisitos Previos
-* Python 3.8 o superior instalado.
-* Git.
-
-### Pasos para Ejecutar
-1. Clonar este repositorio:
-   ```bash
-   git clone [https://github.com/tu-usuario/legacy-orderhub.git](https://github.com/tu-usuario/legacy-orderhub.git)
-   cd legacy-orderhub
-2. Crear y activar un entorno virtual:
-   ```bash
-   python -m venv venv
-   # En Linux/macOS:
-   source venv/bin/activate
-   # En Windows:
-   venv\Scripts\activate
-
-3. Instalar las dependencias. `requirements.txt` contiene solo las de ejecución; `requirements-dev.txt` agrega pruebas, linters y escáneres de seguridad:
-  ```bash
-  pip install -r requirements-dev.txt
-  ```
-
-4. Configurar las variables de entorno (RNF-02.1). Copiar la plantilla y completar `SECRET_KEY` (y, si se quieren usuarios semilla, `SEED_ADMIN_PASSWORD` y `SEED_CLIENT_PASSWORD`). El archivo `.env` no se sube al repositorio:
-   ```bash
-   cp .env.example .env
-   python -c "import secrets; print(secrets.token_urlsafe(48))"
-   ```
-
-5. Ejecutar la aplicación y las pruebas:
-   ```bash
-   python app.py
-   python -m pytest
-   ```
-
-### Entorno completo con Docker (recomendado)
-
-Requiere Docker Desktop. Con el `.env` configurado (incluye `POSTGRES_PASSWORD` y `GRAFANA_ADMIN_PASSWORD`):
+Con `POSTGRES_PASSWORD` y `GRAFANA_ADMIN_PASSWORD` definidas en el `.env`:
 
 ```bash
 docker compose up -d --build
 ```
 
-- API: http://localhost:8000 (panel de pruebas en `/`)
-- Grafana: http://localhost:3000 (usuario `admin`, dashboard "OrderHub - Métricas RED")
-- Prometheus: http://localhost:9090
+| Servicio | URL |
+| :--- | :--- |
+| Aplicación | http://localhost:8000 |
+| Grafana (usuario `admin`) | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
 
-Levanta la API (gunicorn), el worker de notificaciones, PostgreSQL, Redis, Prometheus y Grafana. Ver `docs/ARCHITECTURE.md` §14.
+Levanta la API (gunicorn), el worker, PostgreSQL, Redis, Prometheus y Grafana.
 
-### Kubernetes local (Minikube)
+### 3. Kubernetes local (Minikube)
 
 ```bash
 minikube start --driver=docker && minikube addons enable metrics-server
@@ -142,4 +102,48 @@ kubectl apply -k k8s/
 kubectl -n orderhub port-forward service/api 8080:8000
 ```
 
-Incluye un HPA de 2 a 5 réplicas (70 % de CPU). Ver `docs/ARCHITECTURE.md` §15.
+Para ver el autoescalado: `kubectl apply -f k8s/tools/load-generator.yaml` y `kubectl -n orderhub get hpa api --watch`.
+
+### 4. Nube (Render)
+
+`render.yaml` define la app, PostgreSQL y Redis. Cada merge a `main` despliega automáticamente. Ver [`docs/RENDER_DEPLOYMENT.md`](docs/RENDER_DEPLOYMENT.md).
+
+## Rutas principales
+
+| Ruta | Descripción |
+| :--- | :--- |
+| `/login`, `/registro`, `/catalogo`, `/ordenes`, `/admin/productos` | Interfaz web |
+| `/dev` | Panel técnico para probar la API (401/403, token manipulado) |
+| `POST /login`, `POST /register` | Autenticación (devuelve un JWT) |
+| `GET /products` · `POST /products` (admin) | Catálogo |
+| `POST /create_order` · `GET /my_orders` · `GET /get_all_orders_legacy` (admin) | Órdenes |
+| `GET /healthcheck` · `GET /metrics` | Salud y métricas |
+
+## Calidad
+
+```bash
+python -m pytest                                              # pruebas + cobertura (falla si es < 80 %)
+black --check . && flake8                                     # PEP 8
+bandit -r orderhub app.py config.py --severity-level medium   # SAST
+pip-audit -r requirements.txt                                 # dependencias vulnerables
+```
+
+Para correr también las pruebas contra PostgreSQL, define `TEST_DATABASE_URL`. El CI lo hace automáticamente en cada Pull Request.
+
+## Documentación
+
+| Documento | Contenido |
+| :--- | :--- |
+| [`docs/ANALYSIS_AND_REQUIREMENTS.md`](docs/ANALYSIS_AND_REQUIREMENTS.md) | Requisitos, historias de usuario y seguimiento de implementación (§5) |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Arquitectura, patrones, flujos, configuración, observabilidad, contenedores, Kubernetes e interfaz, con diagramas |
+| [`docs/REVERSE_ENGINEERING.md`](docs/REVERSE_ENGINEERING.md) | Ingeniería inversa del sistema legado (C4, funciones, patrones) |
+| [`docs/TECHNICAL_DEBT_LOG.md`](docs/TECHNICAL_DEBT_LOG.md) | Bitácora de deuda técnica y su resolución |
+| [`docs/RENDER_DEPLOYMENT.md`](docs/RENDER_DEPLOYMENT.md) | Despliegue público en Render |
+
+La estrategia de despliegue en **Azure** (Container Apps + PostgreSQL, Canary/Blue-Green y rollback) está preparada en la rama `feature/azure`. No se ejecutó porque la suscripción de estudiante quedó bloqueada en el registro de proveedores de recursos.
+
+## Reglas del proyecto
+
+1. **Nada de push directo a `main`:** todo cambio entra por rama y Pull Request, con el CI en verde.
+2. **Cero secretos:** ninguna clave, token o contraseña en el código. Todo se lee de variables de entorno (`.env`, secretos de Render o de Kubernetes).
+3. **Documentación continua:** cada cambio de arquitectura se documenta en `/docs`.
