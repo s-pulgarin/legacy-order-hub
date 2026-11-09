@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/catalogo"><span class="brand-mark">O</span><span>OrderHub</span></a>
+    <nav class="nav">
+      <a href="/catalogo">Catálogo</a>
+      <a href="/ordenes">Mis órdenes</a>
+      <a href="/admin/productos" data-admin-only hidden>Productos</a>
+    </nav>
+    <div class="user">
+      <span class="badge" data-user-role></span>
+      <span class="user-name" data-user-name></span>
+      <span class="avatar" data-user-avatar></span>
+      <button class="btn btn-ghost btn-sm" type="button" data-logout>Salir</button>
+    </div>
+  </div>
+</header>
+<main class="page">
+  {% block content %}{% endblock %}
+</main>
+{% endblock %}

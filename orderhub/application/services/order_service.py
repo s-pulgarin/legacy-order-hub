@@ -45,6 +45,11 @@ class OrderService:
         self._notifier.order_created(order)
         return order
 
+    def list_orders_for_user(self, user_id: int) -> List[Order]:
+        """Devuelve solo las órdenes del usuario indicado."""
+        with self._uow_factory() as uow:
+            return uow.orders.list_by_user(user_id)
+
     def list_orders(self) -> List[Order]:
         """Devuelve todas las órdenes registradas."""
         with self._uow_factory() as uow:

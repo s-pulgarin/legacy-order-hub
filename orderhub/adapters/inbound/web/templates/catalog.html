@@ -1,0 +1,62 @@
+{% extends "app_base.html" %}
+{% block title %}Catálogo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Catálogo</h1>
+    <p>Productos disponibles con su precio y stock actual.</p>
+  </div>
+</div>
+<div class="grid" id="products"><div class="card empty">Cargando catálogo…</div></div>
+<div class="card empty" id="empty" hidden>Todavía no hay productos en el catálogo.</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    if (!OrderHub.requireSession()) return;
+    const { el } = OrderHub;
+    const grid = document.getElementById("products");
+
+    function productCard(product) {
+      const card = el("article", "card product");
+      const top = el("div", "product-top");
+      top.append(el("div", "product-name", product.name), OrderHub.stockBadge(product.stock));
+      const price = el("div", "product-price", OrderHub.formatMoney(product.price));
+
+      const buy = el("form", "product-buy");
+      const qty = el("input", "input");
+      qty.type = "number"; qty.min = "1"; qty.value = "1";
+      qty.setAttribute("aria-label", "Cantidad de " + product.name);
+      const button = el("button", "btn btn-primary", "Comprar");
+      button.type = "submit";
+      if (product.stock <= 0) { qty.disabled = true; button.disabled = true; }
+      buy.append(qty, button);
+      buy.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        button.disabled = true;
+        const quantity = Number(qty.value);
+        const { ok, data } = await OrderHub.api("POST", "/create_order", { product_id: product.id, quantity });
+        if (ok) {
+          OrderHub.toast("Orden #" + data.order_id + " creada · Total " + OrderHub.formatMoney(data.total));
+          await load();
+        } else {
+          OrderHub.toast(OrderHub.errorMessage(data, "No se pudo crear la orden."), true);
+          button.disabled = false;
+        }
+      });
+
+      card.append(top, price, buy);
+      return card;
+    }
+
+    async function load() {
+      const { ok, data } = await OrderHub.api("GET", "/products");
+      if (!ok) return OrderHub.toast("No se pudo cargar el catálogo.", true);
+      grid.replaceChildren(...data.map(productCard));
+      document.getElementById("empty").hidden = data.length > 0;
+    }
+
+    load();
+  })();
+</script>
+{% endblock %}

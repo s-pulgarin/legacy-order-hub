@@ -1,0 +1,47 @@
+{% extends "auth_base.html" %}
+{% block title %}Crear cuenta{% endblock %}
+{% block card %}
+<h1>Crear cuenta</h1>
+<p class="lead">Regístrate para comprar en el catálogo.</p>
+<div class="alert" id="alert" role="alert"></div>
+<form id="register-form" novalidate>
+  <div class="field">
+    <label for="username">Usuario</label>
+    <input class="input" id="username" autocomplete="username" required autofocus>
+  </div>
+  <div class="field">
+    <label for="password">Contraseña</label>
+    <input class="input" id="password" type="password" autocomplete="new-password" required>
+    <div class="hint">Mínimo 8 caracteres.</div>
+  </div>
+  <div class="field">
+    <label for="confirm">Confirmar contraseña</label>
+    <input class="input" id="confirm" type="password" autocomplete="new-password" required>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit" id="submit">Crear cuenta</button>
+</form>
+<p class="switch">¿Ya tienes cuenta? <a href="/login">Iniciar sesión</a></p>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const alertBox = document.getElementById("alert");
+    document.getElementById("register-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const confirm = document.getElementById("confirm").value;
+      if (!username) return OrderHub.showAlert(alertBox, "Escribe un nombre de usuario.");
+      if (password.length < 8) return OrderHub.showAlert(alertBox, "La contraseña debe tener al menos 8 caracteres.");
+      if (password !== confirm) return OrderHub.showAlert(alertBox, "Las contraseñas no coinciden.");
+
+      const button = document.getElementById("submit");
+      button.disabled = true;
+      const { ok, data } = await OrderHub.api("POST", "/register", { username, password });
+      if (ok) { location.href = "/login?registrado=1"; return; }
+      OrderHub.showAlert(alertBox, OrderHub.errorMessage(data, "No se pudo crear la cuenta."));
+      button.disabled = false;
+    });
+  })();
+</script>
+{% endblock %}

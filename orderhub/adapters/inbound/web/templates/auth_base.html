@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="auth">
+  <aside class="auth-aside">
+    <div class="brand"><span class="brand-mark">O</span><span>OrderHub</span></div>
+    <div>
+      <h2>Gestión de pedidos e inventario, simple y segura.</h2>
+      <p>Consulta el catálogo, registra órdenes y controla el stock en tiempo real desde un solo lugar.</p>
+    </div>
+    <small>&copy; OrderHub · Actualización y Mantenimiento de Software</small>
+  </aside>
+  <main class="auth-main">
+    <div class="auth-card">
+      {% block card %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% endblock %}

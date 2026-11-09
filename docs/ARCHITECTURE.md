@@ -36,7 +36,9 @@ OrderHub es una API Flask que gestiona usuarios, catálogo de productos y órden
 
 | Método y ruta | Protección | Descripción |
 | :--- | :--- | :--- |
-| `GET /` | Pública | Panel HTML para probar todos los endpoints (ver sección 10) |
+| `GET /` | Pública | Redirige a la interfaz web (`/login`); ver sección 16 |
+| `GET /dev` | Pública | Panel técnico para probar todos los endpoints (ver sección 10) |
+| `GET /my_orders` | `@token_required` | Órdenes del usuario del token |
 | `POST /register` | Pública | Crea un usuario con rol `client` |
 | `POST /login` | Pública | Devuelve el usuario (sin contraseña) y un JWT |
 | `POST /create_order` | `@token_required` | Crea una orden a nombre del usuario del token |
@@ -658,3 +660,21 @@ kubectl -n orderhub get hpa api --watch
 ```
 
 > Prometheus y Grafana se demuestran en docker-compose (§14). En el clúster, los pods de la API llevan las anotaciones `prometheus.io/scrape` para un Prometheus que se instale aparte.
+
+## 16. Interfaz web
+
+Interfaz corporativa y minimalista servida por Flask (`adapters/inbound/web/templates/` y `static/`), sin frameworks de frontend:
+
+| Ruta | Pantalla | Quién |
+| :--- | :--- | :--- |
+| `/login`, `/registro` | Inicio de sesión y creación de cuenta | Público |
+| `/catalogo` | Productos con precio, stock y botón de compra | Con sesión |
+| `/ordenes` | Mis órdenes (el admin puede ver todas) | Con sesión |
+| `/admin/productos` | Crear productos y ver el inventario | Admin |
+| `/dev` | Panel técnico de pruebas (401/403, token manipulado) | Público |
+
+- Las páginas solo sirven HTML. Los datos se piden a la API con el JWT guardado en `sessionStorage`; ante un 401 se cierra la sesión y se vuelve al login.
+- **La seguridad la aplica la API**, no la interfaz: ocultar el menú "Productos" a un cliente es solo comodidad; si llama a la API igual recibe 403.
+- El contenido dinámico se pinta con `textContent`, nunca con `innerHTML`, para evitar XSS (por ejemplo, con nombres de producto maliciosos).
+- `templates/base.html` → `auth_base.html` / `app_base.html` (herencia de Jinja). Los estilos están en `static/css/app.css` y la sesión, las llamadas a la API y los helpers en `static/js/app.js`.
+

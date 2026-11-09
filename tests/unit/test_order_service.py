@@ -80,3 +80,12 @@ def test_list_orders_returns_created_orders(service):
     service.create_order(user_id=2, product_id=1, quantity=1)
     service.create_order(user_id=2, product_id=1, quantity=1)
     assert [o.id for o in service.list_orders()] == [1, 2]
+
+
+def test_list_orders_for_user_devuelve_solo_las_suyas(service):
+    service.create_order(user_id=2, product_id=1, quantity=1)
+    service.create_order(user_id=3, product_id=1, quantity=1)
+    service.create_order(user_id=2, product_id=1, quantity=1)
+
+    assert [o.id for o in service.list_orders_for_user(2)] == [1, 3]
+    assert service.list_orders_for_user(99) == []

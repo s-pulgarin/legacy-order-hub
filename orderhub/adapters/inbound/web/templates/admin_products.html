@@ -1,0 +1,80 @@
+{% extends "app_base.html" %}
+{% block title %}Productos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Productos</h1>
+    <p>Administra el catálogo. Solo visible para administradores.</p>
+  </div>
+</div>
+<div class="two-col">
+  <section class="card card-body">
+    <h3 style="margin-bottom:16px">Nuevo producto</h3>
+    <div class="alert" id="alert" role="alert"></div>
+    <form id="product-form" novalidate>
+      <div class="field">
+        <label for="name">Nombre</label>
+        <input class="input" id="name" required>
+      </div>
+      <div class="field">
+        <label for="price">Precio (USD)</label>
+        <input class="input" id="price" type="number" min="0.01" step="0.01" required>
+      </div>
+      <div class="field">
+        <label for="stock">Stock inicial</label>
+        <input class="input" id="stock" type="number" min="0" step="1" value="0" required>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="submit">Crear producto</button>
+    </form>
+  </section>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Producto</th><th class="num">Precio</th><th>Stock</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="empty">Cargando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    if (!OrderHub.requireSession({ admin: true })) return;
+    const { el } = OrderHub;
+    const alertBox = document.getElementById("alert");
+
+    async function load() {
+      const { ok, data } = await OrderHub.api("GET", "/products");
+      if (!ok) return;
+      document.getElementById("rows").replaceChildren(...data.map((p) => {
+        const tr = el("tr");
+        const stock = el("td");
+        stock.append(OrderHub.stockBadge(p.stock));
+        tr.append(el("td", "", p.id), el("td", "", p.name), el("td", "num", OrderHub.formatMoney(p.price)), stock);
+        return tr;
+      }));
+    }
+
+    document.getElementById("product-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = document.getElementById("name").value.trim();
+      const price = Number(document.getElementById("price").value);
+      const stock = Number(document.getElementById("stock").value);
+      if (!name) return OrderHub.showAlert(alertBox, "Escribe el nombre del producto.");
+      if (!(price > 0)) return OrderHub.showAlert(alertBox, "El precio debe ser mayor que cero.");
+
+      const button = document.getElementById("submit");
+      button.disabled = true;
+      const { ok, data } = await OrderHub.api("POST", "/products", { name, price, stock });
+      button.disabled = false;
+      if (!ok) return OrderHub.showAlert(alertBox, OrderHub.errorMessage(data, "No se pudo crear el producto."));
+      OrderHub.showAlert(alertBox, "Producto “" + data.product.name + "” creado.", "success");
+      event.target.reset();
+      load();
+    });
+
+    load();
+  })();
+</script>
+{% endblock %}

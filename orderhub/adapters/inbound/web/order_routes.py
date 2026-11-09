@@ -52,3 +52,11 @@ def get_orders():
     """Lista todas las órdenes de todos los usuarios (solo administradores)."""
     orders = _order_service().list_orders()
     return jsonify([order_to_dict(o) for o in orders]), 200
+
+
+@bp.route("/my_orders", methods=["GET"])
+@token_required
+def my_orders():
+    """Lista las órdenes del usuario del token (cualquier rol)."""
+    orders = _order_service().list_orders_for_user(g.current_user.user_id)
+    return jsonify([order_to_dict(o) for o in orders]), 200
